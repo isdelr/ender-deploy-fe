@@ -78,7 +78,7 @@ const handleTemplateSelection = (template: any, setFieldValue: Function) => {
     
     <Form :validation-schema="formSchema" @submit="onSubmit" v-slot="{ setFieldValue, values }">
         <Stepper class="w-full justify-center" orientation="horizontal" :model-value="currentStep" @update:model-value="onStep">
-            <StepperItem :value="1">
+            <StepperItem :step="1">
                 <StepperTrigger>
                     <StepperIndicator>1</StepperIndicator>
                     <div>
@@ -86,9 +86,9 @@ const handleTemplateSelection = (template: any, setFieldValue: Function) => {
                         <StepperDescription>Choose a server blueprint</StepperDescription>
                     </div>
                 </StepperTrigger>
+                <StepperSeparator />
             </StepperItem>
-            <StepperSeparator />
-            <StepperItem :value="2">
+            <StepperItem :step="2">
                 <StepperTrigger>
                     <StepperIndicator>2</StepperIndicator>
                     <div>
@@ -96,9 +96,9 @@ const handleTemplateSelection = (template: any, setFieldValue: Function) => {
                         <StepperDescription>Set basic server details</StepperDescription>
                     </div>
                 </StepperTrigger>
+                <StepperSeparator />
             </StepperItem>
-            <StepperSeparator />
-             <StepperItem :value="3">
+             <StepperItem :step="3">
                 <StepperTrigger>
                     <StepperIndicator>3</StepperIndicator>
                     <div>

@@ -1,18 +1,22 @@
+// ender-deploy-fe/app/pages/servers/index.vue
+
 <script setup lang="ts">
-import { onMounted } from "vue";
 import { useServerStore } from '~/stores/server';
 import { toast } from 'vue-sonner';
 
-definePageMeta({ middleware: 'auth' });
+// The definePageMeta block has been removed.
 
 type ServerStatus = "online" | "offline" | "starting" | "stopping";
 
 const serverStore = useServerStore();
 
-onMounted(() => {
-  serverStore.fetchServers();
-});
+// REFACTORED: Fetch servers on initial load using useAsyncData.
+// This ensures the server list is available on the server-render.
+const { pending: isLoadingList, error } = await useAsyncData('servers-list', () =>
+  serverStore.fetchServers()
+);
 
+// Helper functions (unchanged)
 const getStatusClass = (status: ServerStatus) => {
   if (status === "online") return "server-status-online";
   if (status === "offline") return "server-status-offline";
@@ -45,7 +49,7 @@ const copyToClipboard = (text: string) => {
 
 <template>
   <div class="space-y-8">
-    <!-- Page Header -->
+    <!-- Page Header (unchanged) -->
     <header class="space-y-4">
       <Breadcrumb>
         <BreadcrumbList>
@@ -73,7 +77,7 @@ const copyToClipboard = (text: string) => {
       </div>
     </header>
 
-    <!-- Filters and Search -->
+    <!-- Filters and Search (unchanged) -->
     <div class="flex flex-col sm:flex-row gap-4">
       <div class="relative flex-1">
         <Icon name="lucide:search" class="absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground" />
@@ -97,8 +101,8 @@ const copyToClipboard = (text: string) => {
       </div>
     </div>
     
-    <!-- Loading Skeletons -->
-     <div v-if="serverStore.isLoadingList" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
+    <!-- REFACTORED: Use `pending` from useAsyncData for skeletons -->
+     <div v-if="isLoadingList" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
         <Card v-for="i in 3" :key="i" class="h-[420px]">
             <CardHeader><Skeleton class="h-6 w-3/4" /></CardHeader>
             <CardContent class="space-y-4">
@@ -110,10 +114,20 @@ const copyToClipboard = (text: string) => {
             <CardFooter><Skeleton class="h-8 w-full" /></CardFooter>
         </Card>
      </div>
+     
+     <div v-else-if="error">
+        <Card>
+            <CardHeader>
+                <CardTitle class="text-destructive">Error Loading Servers</CardTitle>
+                <CardDescription>Could not fetch your server list. Please try refreshing the page.</CardDescription>
+            </CardHeader>
+        </Card>
+     </div>
 
-    <!-- Server Grid -->
+    <!-- Server Grid (iterates over store state, which is populated by useAsyncData) -->
     <div v-else class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
       <Card v-for="server in serverStore.servers" :key="server.id" class="flex flex-col h-full">
+        <!-- Card Content (unchanged) -->
         <CardHeader>
           <CardTitle>{{ server.name }}</CardTitle>
           <CardDescription class="flex items-center gap-2 pt-1">
@@ -226,7 +240,7 @@ const copyToClipboard = (text: string) => {
             </div>
         </CardFooter>
       </Card>
-      <!-- Add New Server Card -->
+      
       <NuxtLink to="/servers/create">
           <Button variant="outline" class="border-dashed h-full w-full min-h-[300px] flex-col gap-2 text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all duration-200">
               <Icon name="lucide:plus-circle" class="h-10 w-10" />

@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { useApiFetch } from '~/composables/useApiFetch';
 
+// --- Interface Definition (unchanged) ---
 type Template = {
     id: string;
     name: string;
@@ -23,25 +24,23 @@ export const useTemplateStore = defineStore('template', {
   actions: {
     async fetchTemplates() {
       this.isLoading = true;
-      const { data, error } = await useApiFetch<Template[]>('/templates');
+      const { data } = await useApiFetch<Template[]>('/templates');
       if (data.value) {
         this.templates = data.value;
       }
       this.isLoading = false;
+      return this.templates; // Return data
     },
     async saveTemplate(templateData: any) {
         const isEditing = !!templateData.id;
         const url = isEditing ? `/templates/${templateData.id}` : '/templates';
         const method = isEditing ? 'PUT' : 'POST';
 
-        const { data, error } = await useApiFetch(url, {
-            method: method,
-            body: templateData
-        });
+        const { error } = await useApiFetch(url, { method, body: templateData });
 
         if(error.value) throw error.value;
 
-        await this.fetchTemplates(); // Refresh the list
+        await this.fetchTemplates();
     }
   },
 });

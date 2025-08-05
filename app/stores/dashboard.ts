@@ -1,14 +1,13 @@
 import { defineStore } from 'pinia';
 import { useApiFetch } from '~/composables/useApiFetch';
 
-// Define types according to the backend models
+// --- Interface Definitions (unchanged) ---
 interface ResourceDataPoint {
     timestamp: string;
     cpuUsage: number;
     ramUsage: number;
     playersCurrent: number;
 }
-
 interface DashboardStats {
     totalServers: number;
     onlineServers: number;
@@ -19,7 +18,6 @@ interface DashboardStats {
     playerHistory: ResourceDataPoint[];
     resourceHistory: ResourceDataPoint[];
 }
-
 interface Event {
     id: string;
     type: string;
@@ -38,18 +36,27 @@ export const useDashboardStore = defineStore('dashboard', {
   actions: {
     async fetchDashboardData() {
       this.isLoading = true;
-      const [{ data: statsData }, { data: eventsData }] = await Promise.all([
-        useApiFetch<DashboardStats>('/dashboard/stats'),
-        useApiFetch<Event[]>('/events?limit=5')
-      ]);
+      try {
+        // Use Promise.all to fetch in parallel
+        const [{ data: statsData }, { data: eventsData }] = await Promise.all([
+          useApiFetch<DashboardStats>('/dashboard/stats'),
+          useApiFetch<Event[]>('/events?limit=5')
+        ]);
 
-      if (statsData.value) {
-        this.stats = statsData.value;
+        if (statsData.value) {
+          this.stats = statsData.value;
+        }
+        if (eventsData.value) {
+          this.recentEvents = eventsData.value;
+        }
+        // Return the main data for useAsyncData
+        return statsData.value;
+      } catch (error) {
+        console.error("Failed to fetch dashboard data:", error);
+        return null;
+      } finally {
+        this.isLoading = false;
       }
-      if (eventsData.value) {
-        this.recentEvents = eventsData.value;
-      }
-      this.isLoading = false;
     },
   },
 });
