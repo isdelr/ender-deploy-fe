@@ -19,12 +19,9 @@ export default defineNuxtConfig({
      */
     componentDir: "./app/components/ui",
   },
-  components: [
-    {
-      path: '~/components',
-      pathPrefix: false,
-    },
-  ],
+  colorMode: {
+    classSuffix: "",
+  },
   modules: [
     "@nuxt/eslint",
     "@nuxt/fonts",
@@ -33,5 +30,6 @@ export default defineNuxtConfig({
     "@nuxt/scripts",
     "shadcn-nuxt",
     "@nuxtjs/color-mode",
+    "nuxt-charts",
   ],
 });
