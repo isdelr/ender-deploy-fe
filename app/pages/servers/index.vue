@@ -1,94 +1,18 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted } from "vue";
+import { useServerStore } from '~/stores/server';
+import { toast } from 'vue-sonner';
 
-// Define the structure for a server object
-type ServerStatus = "online" | "offline" | "starting";
+definePageMeta({ middleware: 'auth' });
 
-interface Server {
-  id: string;
-  name: string;
-  status: ServerStatus;
-  minecraftVersion: string;
-  modpack?: {
-    name: string;
-    version: string;
-  };
-  javaVersion: string;
-  players: {
-    current: number;
-    max: number;
-  };
-  resources: {
-    cpu: number; // percentage
-    ram: number; // percentage
-    storage: number; // percentage
-  };
-  ipAddress: string;
-}
+type ServerStatus = "online" | "offline" | "starting" | "stopping";
 
-// Mock data for demonstration purposes
-const servers = ref<Server[]>([
-  {
-    id: "1",
-    name: "EnderCraft Survival",
-    status: "online",
-    minecraftVersion: "1.21",
-    modpack: {
-      name: "All the Mods 9",
-      version: "1.2.3",
-    },
-    javaVersion: "17",
-    players: { current: 12, max: 50 },
-    resources: { cpu: 75, ram: 60, storage: 45 },
-    ipAddress: "play.endercraft.net",
-  },
-  {
-    id: "2",
-    name: "Vanilla SMP",
-    status: "offline",
-    minecraftVersion: "1.21",
-    javaVersion: "17",
-    players: { current: 0, max: 20 },
-    resources: { cpu: 0, ram: 0, storage: 20 },
-    ipAddress: "vanilla.endercraft.net",
-  },
-  {
-    id: "3",
-    name: "Creative World",
-    status: "starting",
-    minecraftVersion: "1.20.4",
-    javaVersion: "17",
-    players: { current: 0, max: 100 },
-    resources: { cpu: 20, ram: 10, storage: 15 },
-    ipAddress: "creative.endercraft.net",
-  },
-  {
-    id: "4",
-    name: "Pixelmon Adventures",
-    status: "online",
-    minecraftVersion: "1.16.5",
-    modpack: {
-      name: "Pixelmon",
-      version: "9.1.5",
-    },
-    javaVersion: "11",
-    players: { current: 34, max: 100 },
-    resources: { cpu: 88, ram: 92, storage: 78 },
-    ipAddress: "pixel.endercraft.net",
-  },
-  {
-    id: "5",
-    name: "Private Test Server",
-    status: "offline",
-    minecraftVersion: "1.21-snapshot",
-    javaVersion: "21",
-    players: { current: 0, max: 10 },
-    resources: { cpu: 0, ram: 0, storage: 5 },
-    ipAddress: "192.168.1.100:25565",
-  },
-]);
+const serverStore = useServerStore();
 
-// Helper functions to get dynamic classes and icons based on server status
+onMounted(() => {
+  serverStore.fetchServers();
+});
+
 const getStatusClass = (status: ServerStatus) => {
   if (status === "online") return "server-status-online";
   if (status === "offline") return "server-status-offline";
@@ -100,6 +24,23 @@ const getStatusIcon = (status: ServerStatus) => {
   if (status === "offline") return "lucide:power-off";
   return "lucide:loader-circle";
 };
+
+const handleAction = async (serverId: string, action: 'start' | 'stop' | 'restart') => {
+    try {
+        await serverStore.performServerAction(serverId, action);
+        toast.success(`Server action '${action}' initiated.`);
+    } catch (error: any) {
+        toast.error(`Failed to ${action} server`, {
+            description: error.data?.message || 'An unknown error occurred.'
+        });
+    }
+}
+
+const copyToClipboard = (text: string) => {
+    navigator.clipboard.writeText(text);
+    toast.success('IP Address copied to clipboard!');
+}
+
 </script>
 
 <template>
@@ -109,7 +50,7 @@ const getStatusIcon = (status: ServerStatus) => {
       <Breadcrumb>
         <BreadcrumbList>
           <BreadcrumbItem>
-            <BreadcrumbLink href="/">Dashboard</BreadcrumbLink>
+            <NuxtLink to="/">Dashboard</NuxtLink>
           </BreadcrumbItem>
           <BreadcrumbSeparator />
           <BreadcrumbItem>
@@ -123,10 +64,12 @@ const getStatusIcon = (status: ServerStatus) => {
             <h1 class="text-3xl font-bold tracking-tight">Your Servers</h1>
             <p class="text-muted-foreground mt-1">Manage, monitor, and deploy your Minecraft servers with ease.</p>
         </div>
-        <Button size="lg" class="w-full sm:w-auto">
-          <Icon name="lucide:plus" class="mr-2" />
-          Create Server
-        </Button>
+        <NuxtLink to="/servers/create">
+            <Button size="lg" class="w-full sm:w-auto">
+              <Icon name="lucide:plus" class="mr-2" />
+              Create Server
+            </Button>
+        </NuxtLink>
       </div>
     </header>
 
@@ -137,7 +80,7 @@ const getStatusIcon = (status: ServerStatus) => {
         <Input placeholder="Search servers by name or IP..." class="pl-10" />
       </div>
       <div class="flex items-center gap-2">
-         <Select default-value="status">
+         <Select default-value="all">
             <SelectTrigger class="w-full sm:w-[180px]">
                 <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
@@ -153,15 +96,29 @@ const getStatusIcon = (status: ServerStatus) => {
         </Button>
       </div>
     </div>
+    
+    <!-- Loading Skeletons -->
+     <div v-if="serverStore.isLoadingList" class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
+        <Card v-for="i in 3" :key="i" class="h-[420px]">
+            <CardHeader><Skeleton class="h-6 w-3/4" /></CardHeader>
+            <CardContent class="space-y-4">
+                <Skeleton class="h-4 w-1/2" />
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-full" />
+                <Skeleton class="h-4 w-full" />
+            </CardContent>
+            <CardFooter><Skeleton class="h-8 w-full" /></CardFooter>
+        </Card>
+     </div>
 
     <!-- Server Grid -->
-    <div class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
-      <Card v-for="server in servers" :key="server.id" class="flex flex-col h-full">
+    <div v-else class="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 items-start">
+      <Card v-for="server in serverStore.servers" :key="server.id" class="flex flex-col h-full">
         <CardHeader>
           <CardTitle>{{ server.name }}</CardTitle>
           <CardDescription class="flex items-center gap-2 pt-1">
             <Badge :class="getStatusClass(server.status)" class="capitalize">
-              <Icon :name="getStatusIcon(server.status)" class="h-3 w-3" :class="{'animate-spin': server.status === 'starting'}" />
+              <Icon :name="getStatusIcon(server.status)" class="h-3 w-3" :class="{'animate-spin': server.status === 'starting' || server.status === 'stopping'}" />
               {{ server.status }}
             </Badge>
             <span>•</span>
@@ -188,15 +145,15 @@ const getStatusIcon = (status: ServerStatus) => {
                             <span>Console</span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem v-if="server.status !== 'online'">
+                        <DropdownMenuItem @click="handleAction(server.id, 'start')" v-if="server.status === 'offline'">
                             <Icon name="lucide:play" class="mr-2 h-4 w-4" />
                             <span>Start</span>
                         </DropdownMenuItem>
-                         <DropdownMenuItem v-if="server.status === 'online'">
+                         <DropdownMenuItem @click="handleAction(server.id, 'restart')" v-if="server.status === 'online'">
                             <Icon name="lucide:refresh-cw" class="mr-2 h-4 w-4" />
                             <span>Restart</span>
                         </DropdownMenuItem>
-                        <DropdownMenuItem v-if="server.status !== 'offline'">
+                        <DropdownMenuItem @click="handleAction(server.id, 'stop')" v-if="server.status !== 'offline'">
                             <Icon name="lucide:square" class="mr-2 h-4 w-4" />
                             <span>Stop</span>
                         </DropdownMenuItem>
@@ -231,14 +188,14 @@ const getStatusIcon = (status: ServerStatus) => {
             <div class="grid gap-1.5">
                 <div class="flex justify-between items-center">
                     <label class="text-xs font-medium text-muted-foreground">CPU</label>
-                    <span class="text-xs font-mono text-muted-foreground">{{server.resources.cpu}}%</span>
+                    <span class="text-xs font-mono text-muted-foreground">{{server.resources.cpu.toFixed(1)}}%</span>
                 </div>
                 <Progress :model-value="server.resources.cpu" />
             </div>
              <div class="grid gap-1.5">
                 <div class="flex justify-between items-center">
                     <label class="text-xs font-medium text-muted-foreground">RAM</label>
-                    <span class="text-xs font-mono text-muted-foreground">{{server.resources.ram}}%</span>
+                    <span class="text-xs font-mono text-muted-foreground">{{server.resources.ram.toFixed(1)}}%</span>
                 </div>
                 <Progress :model-value="server.resources.ram" />
             </div>
@@ -257,7 +214,7 @@ const getStatusIcon = (status: ServerStatus) => {
                 <span class="font-mono text-sm flex-1 truncate" :title="server.ipAddress">{{ server.ipAddress }}</span>
                 <Tooltip>
                     <TooltipTrigger as-child>
-                         <Button variant="ghost" size="icon" class="h-7 w-7">
+                         <Button variant="ghost" size="icon" class="h-7 w-7" @click="copyToClipboard(server.ipAddress)">
                             <Icon name="lucide:copy" class="h-4 w-4" />
                              <span class="sr-only">Copy IP Address</span>
                         </Button>
@@ -270,10 +227,12 @@ const getStatusIcon = (status: ServerStatus) => {
         </CardFooter>
       </Card>
       <!-- Add New Server Card -->
-      <Button variant="outline" class="border-dashed h-full min-h-[300px] flex-col gap-2 text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all duration-200">
-          <Icon name="lucide:plus-circle" class="h-10 w-10" />
-          <span class="text-base font-semibold">Create New Server</span>
-      </Button>
+      <NuxtLink to="/servers/create">
+          <Button variant="outline" class="border-dashed h-full w-full min-h-[300px] flex-col gap-2 text-muted-foreground hover:text-foreground hover:border-primary/50 transition-all duration-200">
+              <Icon name="lucide:plus-circle" class="h-10 w-10" />
+              <span class="text-base font-semibold">Create New Server</span>
+          </Button>
+      </NuxtLink>
     </div>
   </div>
 </template>

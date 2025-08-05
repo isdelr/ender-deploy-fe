@@ -4,6 +4,15 @@ import tailwindcss from "@tailwindcss/vite";
 export default defineNuxtConfig({
   compatibilityDate: "2025-07-15",
   devtools: { enabled: true },
+
+  // Add this runtimeConfig block
+  runtimeConfig: {
+    public: {
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8080/api/v1',
+      wsBase: process.env.NUXT_PUBLIC_WS_BASE || 'ws://localhost:8080/api/v1/ws',
+    }
+  },
+
   css: ["~/assets/css/main.css"],
   vite: {
     plugins: [tailwindcss()],
@@ -31,5 +40,7 @@ export default defineNuxtConfig({
     "shadcn-nuxt",
     "@nuxtjs/color-mode",
     "nuxt-charts",
+    "@pinia/nuxt",
+    "@vueuse/nuxt",
   ],
 });

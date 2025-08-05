@@ -1,14 +1,15 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, computed } from 'vue';
 import { toTypedSchema } from '@vee-validate/zod';
 import * as z from 'zod';
+import { useAuthStore } from '~/stores/auth';
+import { toast } from 'vue-sonner';
 
-// --- Page Meta and Breadcrumbs ---
-useHead({
-  title: 'User Profile - EnderDeploy',
-});
+useHead({ title: 'User Profile - EnderDeploy' });
 
-// --- Validation Schemas ---
+const authStore = useAuthStore();
+const user = computed(() => authStore.user);
+
 const profileSchema = toTypedSchema(
   z.object({
     username: z.string().min(3, 'Username must be at least 3 characters.').max(20),
@@ -27,39 +28,43 @@ const passwordSchema = toTypedSchema(
   })
 );
 
-// --- Mock Data & State ---
-const user = ref({
-  username: 'DemoUser',
-  email: 'demo@example.com',
-  avatar: 'https://github.com/radix-vue.png',
-});
-
-// --- Form Handlers ---
 function onProfileSubmit(values: any) {
-  console.log('Profile updated:', values);
-  // Here you would typically call an API to save the user's details.
+  toast.promise(authStore.updateUser(values), {
+    loading: 'Updating profile...',
+    success: 'Profile updated successfully!',
+    error: (err) => err.data?.message || 'Failed to update profile.',
+  });
 }
 
-function onPasswordSubmit(values: any) {
-  console.log('Password change requested:', values);
-  // API call to change password.
+function onPasswordSubmit(values: any, { resetForm }: any) {
+  toast.promise(authStore.changePassword(values), {
+    loading: 'Changing password...',
+    success: () => {
+        resetForm();
+        return 'Password changed successfully!';
+    },
+    error: (err) => err.data?.message || 'Failed to change password.',
+  });
 }
 
+function handleDeleteAccount() {
+    toast.promise(authStore.deleteAccount(), {
+        loading: 'Deleting account...',
+        success: 'Account deleted successfully. You have been logged out.',
+        error: (err) => err.data?.message || 'Failed to delete account.'
+    });
+}
 </script>
 
 <template>
-  <div class="space-y-8">
+  <div v-if="user" class="space-y-8">
     <!-- Page Header -->
     <header class="space-y-4">
       <Breadcrumb>
         <BreadcrumbList>
-          <BreadcrumbItem>
-            <NuxtLink to="/">Dashboard</NuxtLink>
-          </BreadcrumbItem>
+          <BreadcrumbItem><NuxtLink to="/">Dashboard</NuxtLink></BreadcrumbItem>
           <BreadcrumbSeparator />
-          <BreadcrumbItem>
-            <BreadcrumbPage>Profile</BreadcrumbPage>
-          </BreadcrumbItem>
+          <BreadcrumbItem><BreadcrumbPage>Profile</BreadcrumbPage></BreadcrumbItem>
         </BreadcrumbList>
       </Breadcrumb>
       <div>
@@ -84,31 +89,8 @@ function onPasswordSubmit(values: any) {
               <CardDescription>Update your username and email address.</CardDescription>
             </CardHeader>
             <CardContent class="space-y-6">
-              <div class="flex items-center gap-4">
-                <Avatar class="size-16">
-                  <AvatarImage :src="user.avatar" alt="User Avatar" />
-                  <AvatarFallback>{{ user.username?.substring(0, 2).toUpperCase() }}</AvatarFallback>
-                </Avatar>
-              </div>
-              <FormField name="username" v-slot="{ componentField }">
-                <FormItem>
-                  <FormLabel>Username</FormLabel>
-                  <FormControl>
-                    <Input placeholder="Your username" v-bind="componentField" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              </FormField>
-              <FormField name="email" v-slot="{ componentField }">
-                <FormItem>
-                  <FormLabel>Email Address</FormLabel>
-                  <FormControl>
-                    <Input type="email" placeholder="your.email@example.com" v-bind="componentField" />
-                  </FormControl>
-                  <FormDescription>Used for notifications and password recovery.</FormDescription>
-                  <FormMessage />
-                </FormItem>
-              </FormField>
+              <FormField name="username" v-slot="{ componentField }"><FormItem><FormLabel>Username</FormLabel><FormControl><Input v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+              <FormField name="email" v-slot="{ componentField }"><FormItem><FormLabel>Email Address</FormLabel><FormControl><Input type="email" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
             </CardContent>
             <CardFooter class="border-t pt-6">
               <Button type="submit">Update Profile</Button>
@@ -121,66 +103,26 @@ function onPasswordSubmit(values: any) {
       <TabsContent value="security" class="pt-6 space-y-6">
         <Card>
           <Form :validation-schema="passwordSchema" @submit="onPasswordSubmit">
-            <CardHeader>
-              <CardTitle>Change Password</CardTitle>
-              <CardDescription>Update your password for better security. Choose a strong, unique password.</CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle>Change Password</CardTitle></CardHeader>
             <CardContent class="space-y-4">
-              <FormField name="currentPassword" v-slot="{ componentField }">
-                <FormItem>
-                  <FormLabel>Current Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" v-bind="componentField" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              </FormField>
-              <FormField name="newPassword" v-slot="{ componentField }">
-                <FormItem>
-                  <FormLabel>New Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" v-bind="componentField" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              </FormField>
-              <FormField name="confirmPassword" v-slot="{ componentField }">
-                <FormItem>
-                  <FormLabel>Confirm New Password</FormLabel>
-                  <FormControl>
-                    <Input type="password" v-bind="componentField" />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              </FormField>
+              <FormField name="currentPassword" v-slot="{ componentField }"><FormItem><FormLabel>Current Password</FormLabel><FormControl><Input type="password" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+              <FormField name="newPassword" v-slot="{ componentField }"><FormItem><FormLabel>New Password</FormLabel><FormControl><Input type="password" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+              <FormField name="confirmPassword" v-slot="{ componentField }"><FormItem><FormLabel>Confirm New Password</FormLabel><FormControl><Input type="password" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
             </CardContent>
-            <CardFooter class="border-t pt-6">
-              <Button type="submit">Set New Password</Button>
-            </CardFooter>
+            <CardFooter class="border-t pt-6"><Button type="submit">Set New Password</Button></CardFooter>
           </Form>
         </Card>
 
         <Card>
-            <CardHeader>
-                <CardTitle>Delete Account</CardTitle>
-                <CardDescription>Permanently delete your account and all associated data. This action cannot be undone.</CardDescription>
-            </CardHeader>
+            <CardHeader><CardTitle>Delete Account</CardTitle><CardDescription>Permanently delete your account.</CardDescription></CardHeader>
             <CardFooter>
                 <AlertDialog>
-                    <AlertDialogTrigger as-child>
-                        <Button variant="destructive">Delete Account</Button>
-                    </AlertDialogTrigger>
+                    <AlertDialogTrigger as-child><Button variant="destructive">Delete Account</Button></AlertDialogTrigger>
                     <AlertDialogContent>
-                        <AlertDialogHeader>
-                            <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                                This action cannot be undone. This will permanently delete your account
-                                and remove your data from our servers.
-                            </AlertDialogDescription>
-                        </AlertDialogHeader>
+                        <AlertDialogHeader><AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle><AlertDialogDescription>This action cannot be undone. This will permanently delete your account and remove your data from our servers.</AlertDialogDescription></AlertDialogHeader>
                         <AlertDialogFooter>
                             <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction>Continue</AlertDialogAction>
+                            <AlertDialogAction @click="handleDeleteAccount">Continue</AlertDialogAction>
                         </AlertDialogFooter>
                     </AlertDialogContent>
                 </AlertDialog>
