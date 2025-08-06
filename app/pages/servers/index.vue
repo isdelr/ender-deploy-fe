@@ -30,6 +30,16 @@ const getStatusIcon = (status: ServerStatus) => {
 };
 
 const handleAction = async (serverId: string, action: 'start' | 'stop' | 'restart') => {
+    // ADDED: Optimistic UI update for a more responsive feel
+    const server = serverStore.servers.find(s => s.id === serverId);
+    if (server) {
+        if (action === 'start' || action === 'restart') {
+            server.status = 'starting';
+        } else if (action === 'stop') {
+            server.status = 'stopping';
+        }
+    }
+
     try {
         await serverStore.performServerAction(serverId, action);
         toast.success(`Server action '${action}' initiated.`);
@@ -37,8 +47,18 @@ const handleAction = async (serverId: string, action: 'start' | 'stop' | 'restar
         toast.error(`Failed to ${action} server`, {
             description: error.data?.message || 'An unknown error occurred.'
         });
+        // Revert optimistic update on error by refetching the real state
+        await serverStore.fetchServers();
     }
 }
+
+const handleDelete = (server: { id: string, name: string }) => {
+    toast.promise(serverStore.deleteServer(server.id), {
+        loading: `Deleting server '${server.name}'...`,
+        success: `Successfully initiated deletion of '${server.name}'.`,
+        error: (err: any) => err.data?.message || 'Failed to delete server.'
+    });
+};
 
 const copyToClipboard = (text: string) => {
     navigator.clipboard.writeText(text);
@@ -154,10 +174,6 @@ const copyToClipboard = (text: string) => {
                               <span>Manage</span>
                           </DropdownMenuItem>
                         </NuxtLink>
-                        <DropdownMenuItem>
-                            <Icon name="lucide:terminal" class="mr-2 h-4 w-4" />
-                            <span>Console</span>
-                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem @click="handleAction(server.id, 'start')" v-if="server.status === 'offline'">
                             <Icon name="lucide:play" class="mr-2 h-4 w-4" />
@@ -172,10 +188,26 @@ const copyToClipboard = (text: string) => {
                             <span>Stop</span>
                         </DropdownMenuItem>
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem variant="destructive">
-                            <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
-                            <span>Delete</span>
-                        </DropdownMenuItem>
+                        <AlertDialog>
+                            <AlertDialogTrigger as-child>
+                                <DropdownMenuItem @select.prevent variant="destructive">
+                                    <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" />
+                                    <span>Delete</span>
+                                </DropdownMenuItem>
+                            </AlertDialogTrigger>
+                            <AlertDialogContent>
+                                <AlertDialogHeader>
+                                    <AlertDialogTitle>Delete '{{ server.name }}'?</AlertDialogTitle>
+                                    <AlertDialogDescription>
+                                        This will permanently delete the server and all its data, including backups. This action cannot be undone.
+                                    </AlertDialogDescription>
+                                </AlertDialogHeader>
+                                <AlertDialogFooter>
+                                    <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                    <AlertDialogAction @click="handleDelete(server)">Confirm Delete</AlertDialogAction>
+                                </AlertDialogFooter>
+                            </AlertDialogContent>
+                        </AlertDialog>
                     </DropdownMenuContent>
                 </DropdownMenu>
            </CardAction>

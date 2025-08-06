@@ -7,7 +7,7 @@ export const useApiFetch = <T>(path: string, options: any = {}) => {
   const defaults = {
     baseURL: config.public.apiBase,
     headers: {
-      ... (authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {}),
+      ...(authStore.token ? { Authorization: `Bearer ${authStore.token}` } : {}),
       'Content-Type': 'application/json',
       'Accept': 'application/json',
     },
@@ -20,6 +20,11 @@ export const useApiFetch = <T>(path: string, options: any = {}) => {
 
   const params = { ...defaults, ...options };
   params.headers = { ...defaults.headers, ...options.headers };
+
+  // If body is FormData, let the browser set the Content-Type with boundary
+  if (params.body instanceof FormData) {
+    delete params.headers['Content-Type'];
+  }
 
   return useFetch<T>(path, params);
 };

@@ -12,21 +12,48 @@ const templateStore = useTemplateStore();
 const serverStore = useServerStore();
 const router = useRouter();
 
-const currentStep = ref(1);
 const isLoading = ref(false);
+const javaVersions = ['8', '11', '17', '21'];
 
-const formSchema = toTypedSchema(
+const templateFormSchema = toTypedSchema(
   z.object({
     templateId: z.string({ required_error: 'Please select a template.' }),
     serverName: z.string().min(3, 'Server name must be at least 3 characters.'),
   })
 );
 
-const onStep = (step: number) => {
-  currentStep.value = step;
-};
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const ACCEPTED_FILE_TYPES = ['application/zip', 'application/x-zip-compressed'];
 
-async function onSubmit(values: any) {
+const uploadFormSchema = toTypedSchema(
+  z.object({
+    serverName: z.string().min(3, 'Server name must be at least 3 characters.'),
+    javaVersion: z.string({ required_error: 'Please select a Java version.'}),
+    // FIX: Use z.coerce.number() to correctly handle number inputs from forms.
+    // This will convert the string/number from the input into a number for validation.
+    maxMemoryMB: z.coerce.number().min(512, 'Memory must be at least 512MB.'),
+    file: z.instanceof(File, { message: 'A .zip file is required.' })
+      .refine((file) => file.size <= MAX_FILE_SIZE, `Max file size is 500MB.`)
+      .refine((file) => ACCEPTED_FILE_TYPES.includes(file.type), 'Only .zip files are supported.'),
+  })
+);
+
+async function onUploadSubmit(values: any) {
+    isLoading.value = true;
+    try {
+        await serverStore.createServerFromUpload(values.serverName, values.javaVersion, values.maxMemoryMB, values.file);
+        toast.success('Server creation started!', {
+            description: 'Your uploaded server is being provisioned and will appear on the servers page shortly.',
+        });
+        router.push('/servers');
+    } catch (error: any) {
+        toast.error('Upload Failed', { description: error.data?.message || 'Could not create the server from the uploaded file.' });
+    } finally {
+        isLoading.value = false;
+    }
+}
+
+async function onTemplateSubmit(values: any) {
   isLoading.value = true;
   try {
     await serverStore.createServer(values.serverName, values.templateId);
@@ -46,14 +73,6 @@ async function onSubmit(values: any) {
 onMounted(() => {
   templateStore.fetchTemplates();
 });
-
-const selectedTemplate = ref<any>(null);
-
-const handleTemplateSelection = (template: any, setFieldValue: Function) => {
-    selectedTemplate.value = template;
-    setFieldValue('templateId', template.id);
-    currentStep.value = 2;
-}
 
 </script>
 
@@ -76,71 +95,20 @@ const handleTemplateSelection = (template: any, setFieldValue: Function) => {
       </div>
     </header>
     
-    <Form :validation-schema="formSchema" @submit="onSubmit" v-slot="{ setFieldValue, values }">
-        <Stepper class="w-full justify-center" orientation="horizontal" :model-value="currentStep" @update:model-value="onStep">
-            <StepperItem :step="1">
-                <StepperTrigger>
-                    <StepperIndicator>1</StepperIndicator>
-                    <div>
-                        <StepperTitle>Select Template</StepperTitle>
-                        <StepperDescription>Choose a server blueprint</StepperDescription>
-                    </div>
-                </StepperTrigger>
-                <StepperSeparator />
-            </StepperItem>
-            <StepperItem :step="2">
-                <StepperTrigger>
-                    <StepperIndicator>2</StepperIndicator>
-                    <div>
-                        <StepperTitle>Configure</StepperTitle>
-                        <StepperDescription>Set basic server details</StepperDescription>
-                    </div>
-                </StepperTrigger>
-                <StepperSeparator />
-            </StepperItem>
-             <StepperItem :step="3">
-                <StepperTrigger>
-                    <StepperIndicator>3</StepperIndicator>
-                    <div>
-                        <StepperTitle>Deploy</StepperTitle>
-                        <StepperDescription>Review and launch</StepperDescription>
-                    </div>
-                </StepperTrigger>
-            </StepperItem>
-        </Stepper>
+    <Tabs default-value="template" class="w-full">
+        <TabsList class="grid w-full max-w-lg mx-auto grid-cols-2">
+            <TabsTrigger value="template"><Icon name="lucide:layout-template" class="mr-2" />Create from Template</TabsTrigger>
+            <TabsTrigger value="upload"><Icon name="lucide:upload-cloud" class="mr-2" />Upload Server (.zip)</TabsTrigger>
+        </TabsList>
 
-        <div class="mt-8">
-            <!-- Step 1: Select Template -->
-            <div v-show="currentStep === 1">
-                <h2 class="text-2xl font-semibold mb-4 text-center">Choose a Template</h2>
-                <div v-if="templateStore.isLoading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    <Skeleton v-for="i in 3" :key="i" class="h-48" />
-                </div>
-                 <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
-                    <Card v-for="template in templateStore.templates" :key="template.id"
-                        class="cursor-pointer hover:border-primary transition-colors"
-                        @click="handleTemplateSelection(template, setFieldValue)">
-                        <CardHeader>
-                             <CardTitle>{{ template.name }}</CardTitle>
-                            <CardDescription class="mt-1">{{ template.description }}</CardDescription>
-                        </CardHeader>
-                        <CardContent>
-                             <div class="text-sm text-muted-foreground">
-                                <div class="flex items-center gap-2">
-                                    <Icon name="mdi:minecraft" class="size-4" />
-                                    <span>{{ template.type }} {{ template.minecraftVersion }}</span>
-                                </div>
-                            </div>
-                        </CardContent>
-                    </Card>
-                </div>
-            </div>
-
-            <!-- Step 2: Configure Details -->
-            <div v-show="currentStep === 2" class="max-w-xl mx-auto space-y-6">
-                 <h2 class="text-2xl font-semibold mb-4 text-center">Configure Your Server</h2>
-                 <Card>
-                    <CardContent class="pt-6 space-y-4">
+        <TabsContent value="template" class="pt-6">
+            <Card class="max-w-2xl mx-auto">
+                <CardHeader>
+                    <CardTitle>Create from Template</CardTitle>
+                    <CardDescription>Select a pre-configured template to quickly start a new server.</CardDescription>
+                </CardHeader>
+                <Form :validation-schema="templateFormSchema" @submit="onTemplateSubmit">
+                    <CardContent class="space-y-4">
                         <FormField name="serverName" v-slot="{ componentField }">
                             <FormItem>
                                 <FormLabel>Server Name</FormLabel>
@@ -151,49 +119,59 @@ const handleTemplateSelection = (template: any, setFieldValue: Function) => {
                                 <FormMessage />
                             </FormItem>
                         </FormField>
+                         <FormField name="templateId" v-slot="{ componentField }">
+                            <FormItem>
+                                <FormLabel>Template</FormLabel>
+                                <Select v-bind="componentField">
+                                    <FormControl><SelectTrigger><SelectValue placeholder="Select a template..." /></SelectTrigger></FormControl>
+                                    <SelectContent>
+                                        <SelectItem v-for="template in templateStore.templates" :key="template.id" :value="template.id">{{ template.name }} ({{template.minecraftVersion}})</SelectItem>
+                                    </SelectContent>
+                                </Select>
+                                <FormMessage />
+                            </FormItem>
+                        </FormField>
                     </CardContent>
-                 </Card>
-                 <div class="flex justify-between">
-                     <Button type="button" variant="outline" @click="currentStep = 1">Back</Button>
-                     <Button type="button" @click="currentStep = 3">Next</Button>
-                 </div>
-            </div>
+                    <CardFooter>
+                        <Button type="submit" :disabled="isLoading">
+                            <Icon v-if="isLoading" name="lucide:loader-circle" class="animate-spin mr-2" />
+                            Create Server
+                        </Button>
+                    </CardFooter>
+                </Form>
+            </Card>
+        </TabsContent>
 
-            <!-- Step 3: Deploy -->
-            <div v-show="currentStep === 3" class="max-w-xl mx-auto space-y-6">
-                 <h2 class="text-2xl font-semibold mb-4 text-center">Review and Deploy</h2>
-                 <Card>
-                    <CardHeader>
-                        <CardTitle>Deployment Summary</CardTitle>
-                    </CardHeader>
-                    <CardContent class="space-y-2 text-sm">
-                        <div class="flex justify-between">
-                            <span class="text-muted-foreground">Server Name:</span>
-                            <span class="font-medium">{{ values.serverName }}</span>
-                        </div>
-                         <div class="flex justify-between">
-                            <span class="text-muted-foreground">Template:</span>
-                            <span class="font-medium">{{ selectedTemplate?.name }}</span>
-                        </div>
-                         <div class="flex justify-between">
-                            <span class="text-muted-foreground">MC Version:</span>
-                            <span class="font-medium">{{ selectedTemplate?.minecraftVersion }}</span>
-                        </div>
-                         <div class="flex justify-between">
-                            <span class="text-muted-foreground">Server Type:</span>
-                            <span class="font-medium">{{ selectedTemplate?.type }}</span>
-                        </div>
+        <TabsContent value="upload" class="pt-6">
+            <Card class="max-w-2xl mx-auto">
+                <CardHeader>
+                    <CardTitle>Upload Custom Server</CardTitle>
+                    <CardDescription>Upload a .zip file containing your complete server files (world, server.jar, mods, etc.).</CardDescription>
+                </CardHeader>
+                <Form :validation-schema="uploadFormSchema" @submit="onUploadSubmit">
+                    <CardContent class="space-y-4">
+                         <FormField name="serverName" v-slot="{ componentField }"><FormItem><FormLabel>Server Name</FormLabel><FormControl><Input placeholder="My Custom Server" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+                         <FormField name="javaVersion" v-slot="{ componentField }"><FormItem><FormLabel>Java Version</FormLabel><Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue placeholder="Select Java Version..." /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="v in javaVersions" :key="v" :value="v">Java {{ v }}</SelectItem></SelectContent></Select><FormMessage /></FormItem></FormField>
+                         <FormField name="maxMemoryMB" v-slot="{ componentField }"><FormItem><FormLabel>Max Memory (MB)</FormLabel><FormControl><Input type="number" placeholder="4096" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+                         <FormField name="file" v-slot="{ value, setValue, handleBlur }">
+                            <FormItem>
+                                <FormLabel>Server Files (.zip)</FormLabel>
+                                <FormControl>
+                                   <Input type="file" accept=".zip,application/zip,application/x-zip-compressed" @change="e => setValue((e.target as HTMLInputElement).files?.[0])" @blur="handleBlur" />
+                                </FormControl>
+                                <FormMessage />
+                            </FormItem>
+                        </FormField>
                     </CardContent>
-                 </Card>
-                  <div class="flex justify-between">
-                     <Button type="button" variant="outline" @click="currentStep = 2">Back</Button>
-                     <Button type="submit" :disabled="isLoading">
-                         <Icon v-if="isLoading" name="lucide:loader-circle" class="animate-spin mr-2" />
-                         Deploy Server
-                    </Button>
-                 </div>
-            </div>
-        </div>
-    </Form>
+                    <CardFooter>
+                        <Button type="submit" :disabled="isLoading">
+                          <Icon v-if="isLoading" name="lucide:loader-circle" class="animate-spin mr-2" />
+                          Upload and Create
+                        </Button>
+                    </CardFooter>
+                </Form>
+            </Card>
+        </TabsContent>
+    </Tabs>
   </div>
 </template>

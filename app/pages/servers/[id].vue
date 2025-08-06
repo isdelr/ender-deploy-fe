@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
 import { useRoute } from 'vue-router';
 import { useServerStore, type OnlinePlayer, type FileInfo, type ResourceDataPoint } from '~/stores/server';
 import { LineChart } from 'vue-chrts';
 import { toast } from 'vue-sonner';
+import FileEditorSheet from '~/components/file-editor-sheet.vue';
 
 const route = useRoute();
 const serverId = route.params.id as string;
@@ -42,6 +43,9 @@ const currentPath = ref('/');
 const consoleCommand = ref('');
 const isFilesLoading = ref(false);
 const kickReason = ref('');
+const consoleScrollArea = ref(null); // ADDED: Ref for auto-scrolling
+const isFileEditorOpen = ref(false);
+const editingFilePath = ref('');
 
 // Client-side specific logic
 onMounted(() => {
@@ -56,18 +60,27 @@ onUnmounted(() => {
   close(); 
 });
 
-// Watch for WebSocket messages (unchanged)
+// Watch for WebSocket messages
 watch(wsData, (newMessage) => {
   try {
     const message = JSON.parse(newMessage);
     if (message.action === 'log_message') {
       consoleLogs.value.push(message.payload);
-      if (consoleLogs.value.length > 300) consoleLogs.value.shift();
+      // Keep the console from growing indefinitely
+      if (consoleLogs.value.length > 500) consoleLogs.value.shift();
+      
+      // Auto-scroll to the bottom on new log
+      nextTick(() => {
+        const scrollEl = (consoleScrollArea.value as any)?.$el?.querySelector('[data-reka-scroll-area-viewport]');
+        if (scrollEl) {
+          scrollEl.scrollTop = scrollEl.scrollHeight;
+        }
+      });
     }
   } catch (e) { /* Ignore non-JSON messages */ }
 });
 
-// --- Action and Helper Functions (mostly unchanged) ---
+// --- Action and Helper Functions ---
 const fetchFiles = async (path: string) => {
     isFilesLoading.value = true;
     const { data } = await useApiFetch<FileInfo[]>(`/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
@@ -94,12 +107,13 @@ const handleTabChange = async (tab: string) => {
   }
 }
 
-const navigateToPath = (file: FileInfo) => {
+const handleFileClick = (file: FileInfo) => {
     if (file.isDir) {
         const newPath = currentPath.value === '/' ? `/${file.name}` : `${currentPath.value}/${file.name}`;
         fetchFiles(newPath);
     } else {
-        toast.info(`Editing for '${file.name}' is not yet implemented.`);
+        editingFilePath.value = currentPath.value === '/' ? `/${file.name}` : `${currentPath.value}/${file.name}`;
+        isFileEditorOpen.value = true;
     }
 }
 const navigateUp = () => {
@@ -148,7 +162,7 @@ const handleDeleteServer = () => {
 }
 const sendConsoleCommand = () => {
   if (!consoleCommand.value) return;
-  const message = JSON.stringify({ action: 'send_command', payload: consoleCommand.value });
+  const message = JSON.stringify({ action: 'send_command', payload: { command: consoleCommand.value } });
   send(message);
   consoleCommand.value = '';
 }
@@ -164,7 +178,8 @@ const sendConsoleCommand = () => {
     <Skeleton class="h-96 w-full" />
   </div>
   <div v-else-if="server" class="space-y-6">
-    <!-- Header and Main Grid (template is unchanged, but now powered by server-fetched data) -->
+    <FileEditorSheet v-model="isFileEditorOpen" :server-id="serverId" :file-path="editingFilePath" />
+    <!-- Header and Main Grid -->
     <header class="space-y-4">
       <Breadcrumb>
         <BreadcrumbList>
@@ -225,10 +240,25 @@ const sendConsoleCommand = () => {
                 <TabsTrigger value="schedules"><Icon name="lucide:timer" />Schedules</TabsTrigger>
                 <TabsTrigger value="settings"><Icon name="lucide:sliders-horizontal" />Settings</TabsTrigger>
             </TabsList>
-            <TabsContent value="console" class="mt-4"><Card class="h-[600px] flex flex-col"><CardContent class="p-0 flex-1 flex flex-col"><ScrollArea class="flex-1 p-4 bg-gray-900/95 dark:bg-black/80 rounded-t-xl"><pre class="text-xs font-mono text-white whitespace-pre-wrap">{{ consoleLogs.join('') }}</pre></ScrollArea><div class="p-2 border-t bg-card flex items-center gap-2"><Icon name="lucide:chevron-right" class="text-muted-foreground" /><Input v-model="consoleCommand" @keyup.enter="sendConsoleCommand" placeholder="Type a command..." class="bg-transparent border-none focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" /><Button @click="sendConsoleCommand">Send</Button></div></CardContent></Card></TabsContent>
+            <TabsContent value="console" class="mt-4">
+                <Card class="h-[600px] flex flex-col">
+                    <CardContent class="p-0 flex-1 flex flex-col">
+                        <ScrollArea ref="consoleScrollArea" class="flex-1 p-4 bg-gray-900/95 dark:bg-black/80 rounded-t-xl">
+                            <div class="text-xs font-mono text-white">
+                                <p v-for="(log, index) in consoleLogs" :key="index" class="whitespace-pre-wrap break-words leading-snug">{{ log }}</p>
+                            </div>
+                        </ScrollArea>
+                        <div class="p-2 border-t bg-card flex items-center gap-2">
+                            <Icon name="lucide:chevron-right" class="text-muted-foreground" />
+                            <Input v-model="consoleCommand" @keyup.enter="sendConsoleCommand" placeholder="Type a command..." class="bg-transparent border-none focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" />
+                            <Button @click="sendConsoleCommand">Send</Button>
+                        </div>
+                    </CardContent>
+                </Card>
+            </TabsContent>
             <TabsContent value="overview" class="mt-4"><Card><CardHeader><CardTitle>Resource History (30 mins)</CardTitle></CardHeader><CardContent><LineChart :data="resourceHistory" :categories="{ cpuUsage: { name: 'CPU', color: 'var(--color-chart-2)' }, ramUsage: { name: 'RAM', color: 'var(--color-chart-3)' }, }" :height="300" y-label="Usage (%)" x-grid-line y-grid-line :y-formatter="(val) => `${val}%`" /></CardContent></Card></TabsContent>
             <TabsContent value="players" class="mt-4"><Card><CardHeader><CardTitle>Online Players</CardTitle></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Player</TableHead><TableHead>UUID</TableHead><TableHead class="text-right">Actions</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="player in onlinePlayers" :key="player.uuid"><TableCell class="font-medium flex items-center gap-2"><img :src="`https://cravatar.eu/helmavatar/${player.uuid || player.name}/32.png`" class="w-6 h-6 rounded" />{{player.name }}</TableCell><TableCell class="font-mono text-muted-foreground">{{ player.uuid }}</TableCell><TableCell class="text-right"><AlertDialog><AlertDialogTrigger as-child><Button variant="outline" size="sm">Kick</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Kick {{ player.name }}?</AlertDialogTitle><AlertDialogDescription>You can provide an optional reason below.</AlertDialogDescription></AlertDialogHeader><Input v-model="kickReason" placeholder="Reason (optional)" /><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction @click="handleKickPlayer(player)">Confirm Kick</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></TableCell></TableRow><TableEmpty v-if="onlinePlayers.length === 0" :colspan="3"><p>No players online</p></TableEmpty></TableBody></Table></CardContent></Card></TabsContent>
-            <TabsContent value="files" class="mt-4"><Card><CardHeader><div class="flex items-center justify-between"><div><CardTitle>File Manager</CardTitle><CardDescription class="font-mono text-xs mt-1">{{ currentPath }}</CardDescription></div><div class="flex gap-2"><Button variant="outline" size="sm" @click="navigateUp" :disabled="currentPath === '/'"><Icon name="lucide:arrow-up" class="mr-2 h-4 w-4" />Go Up</Button></div></div></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Modified</TableHead><TableHead class="text-right">Actions</TableHead></TableRow></TableHeader><TableBody><TableRow v-if="isFilesLoading"><TableCell colspan="4" class="text-center p-8"><Icon name="lucide:loader-circle" class="h-6 w-6 animate-spin" /></TableCell></TableRow><TableRow v-else v-for="file in files" :key="file.name" @click="navigateToPath(file)" class="cursor-pointer"><TableCell class="font-medium flex items-center gap-2"><Icon :name="getFileIcon(file.isDir)" class="text-muted-foreground" />{{ file.name }}</TableCell><TableCell>{{ file.isDir ? '-' : formatBytes(file.size) }}</TableCell><TableCell>{{ new Date(file.modified).toLocaleString() }}</TableCell><TableCell class="text-right"><Button variant="ghost" size="icon" class="h-8 w-8"><Icon name="lucide:more-horizontal" /></Button></TableCell></TableRow><TableEmpty v-if="!isFilesLoading && files.length === 0" :colspan="4"><p>This directory is empty.</p></TableEmpty></TableBody></Table></CardContent></Card></TabsContent>
+            <TabsContent value="files" class="mt-4"><Card><CardHeader><div class="flex items-center justify-between"><div><CardTitle>File Manager</CardTitle><CardDescription class="font-mono text-xs mt-1">{{ currentPath }}</CardDescription></div><div class="flex gap-2"><Button variant="outline" size="sm" @click="navigateUp" :disabled="currentPath === '/'"><Icon name="lucide:arrow-up" class="mr-2 h-4 w-4" />Go Up</Button></div></div></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Modified</TableHead><TableHead class="text-right">Actions</TableHead></TableRow></TableHeader><TableBody><TableRow v-if="isFilesLoading"><TableCell colspan="4" class="text-center p-8"><Icon name="lucide:loader-circle" class="h-6 w-6 animate-spin" /></TableCell></TableRow><TableRow v-else v-for="file in files" :key="file.name" @click="handleFileClick(file)" class="cursor-pointer"><TableCell class="font-medium flex items-center gap-2"><Icon :name="getFileIcon(file.isDir)" class="text-muted-foreground" />{{ file.name }}</TableCell><TableCell>{{ file.isDir ? '-' : formatBytes(file.size) }}</TableCell><TableCell>{{ new Date(file.modified).toLocaleString() }}</TableCell><TableCell class="text-right"><Button variant="ghost" size="icon" class="h-8 w-8"><Icon name="lucide:more-horizontal" /></Button></TableCell></TableRow><TableEmpty v-if="!isFilesLoading && files.length === 0" :colspan="4"><p>This directory is empty.</p></TableEmpty></TableBody></Table></CardContent></Card></TabsContent>
             <TabsContent value="backups" class="mt-4"><BackupsTab :server-id="serverId" /></TabsContent>
             <TabsContent value="schedules" class="mt-4"><SchedulesTab :server-id="serverId" /></TabsContent>
             <TabsContent value="settings" class="mt-4"><SettingsTab :server-id="serverId" /></TabsContent>

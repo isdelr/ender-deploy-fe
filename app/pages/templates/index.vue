@@ -15,24 +15,38 @@ const { pending: isLoading, error } = await useAsyncData('templates-list', () =>
     templateStore.fetchTemplates()
 );
 
-// Zod Schema and Data (unchanged)
 const formSchema = toTypedSchema(
     z.object({
         id: z.string().optional(),
         name: z.string().min(3, 'Name must be at least 3 characters.'),
         description: z.string().optional(),
-        tags: z.array(z.string()).optional(),
-        serverType: z.string(),
-        minecraftVersion: z.string(),
+        installType: z.enum(['standard', 'modpack']),
+        // Standard
+        serverType: z.string().optional(),
+        minecraftVersion: z.string().optional(),
+        // Modpack
+        modpackType: z.string().optional(),
+        modpackURL: z.string().optional(),
+        // Common
         javaVersion: z.string(),
         minMemoryMB: z.number().positive(),
         maxMemoryMB: z.number().positive(),
         jvmArgs: z.array(z.string()).optional(),
+        tags: z.array(z.string()).optional(),
         properties: z.record(z.string()).optional(),
+    }).superRefine((data, ctx) => {
+        if (data.installType === 'standard') {
+            if (!data.serverType) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Server Type is required.', path: ['serverType'] });
+            if (!data.minecraftVersion) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Minecraft Version is required.', path: ['minecraftVersion'] });
+        } else if (data.installType === 'modpack') {
+            if (!data.modpackType) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Provider is required.', path: ['modpackType'] });
+            if (!data.modpackURL) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Modpack URL is required.', path: ['modpackURL'] });
+        }
     })
 );
 
-type Template = z.infer<typeof formSchema>;
+// Explicitly type Template for clarity
+type Template = Partial<z.infer<typeof formSchema>> & { id: string; name: string };
 
 const isSheetOpen = ref(false);
 const editingTemplate = ref<Partial<Template>>({});
@@ -40,20 +54,35 @@ const serverTypes = ['Vanilla', 'Paper', 'Forge', 'Fabric'];
 const minecraftVersions = ['1.21', '1.20.4', '1.20.1', '1.19.2', '1.18.2', '1.16.5'];
 const javaVersions = ['8', '11', '17', '21'];
 
-// Functions (unchanged)
 const createNewTemplate = () => {
     editingTemplate.value = {
-        name: '', description: '', tags: [], serverType: 'Paper', minecraftVersion: minecraftVersions[0],
-        javaVersion: '17', minMemoryMB: 1024, maxMemoryMB: 4096, jvmArgs: [],
+        name: '', description: '', tags: [],
+        installType: 'standard',
+        serverType: 'Paper', minecraftVersion: minecraftVersions[0],
+        modpackType: 'CURSEFORGE', modpackURL: '',
+        javaVersion: '17',
+        minMemoryMB: 1024, maxMemoryMB: 4096,
+        jvmArgs: [],
         properties: { 'gamemode': 'survival', 'difficulty': 'easy', 'hardcore': 'false', 'max-players': '20', 'pvp': 'true', 'online-mode': 'true', 'view-distance': '10', 'simulation-distance': '10' },
     };
     isSheetOpen.value = true;
 };
 const editTemplate = (template: Template) => {
-    editingTemplate.value = JSON.parse(JSON.stringify(template));
+    const templateCopy = JSON.parse(JSON.stringify(template));
+    // Determine installType for the form based on whether modpack fields exist
+    templateCopy.installType = (templateCopy.modpackType && templateCopy.modpackURL) ? 'modpack' : 'standard';
+    editingTemplate.value = templateCopy;
     isSheetOpen.value = true;
 };
 async function onSubmit(values: any) {
+    // Clean up data before sending to backend
+    if (values.installType === 'standard') {
+        values.modpackType = null;
+        values.modpackURL = null;
+    } else {
+        values.serverType = null;
+        values.minecraftVersion = null;
+    }
     try {
         await templateStore.saveTemplate(values);
         toast.success(`Template '${values.name}' saved successfully!`);
@@ -64,6 +93,13 @@ async function onSubmit(values: any) {
         });
     }
 }
+const handleDelete = (template: Template) => {
+    toast.promise(templateStore.deleteTemplate(template.id), {
+        loading: `Deleting template '${template.name}'...`,
+        success: `Template '${template.name}' deleted successfully.`,
+        error: (err: any) => err.data?.message || 'Failed to delete template.'
+    });
+};
 </script>
 
 <template>
@@ -131,9 +167,25 @@ async function onSubmit(values: any) {
                                     <Icon name="lucide:pencil" class="mr-2 h-4 w-4" /><span>Edit</span>
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
-                                <DropdownMenuItem class="text-destructive">
-                                    <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" /><span>Delete</span>
-                                </DropdownMenuItem>
+                                <AlertDialog>
+                                    <AlertDialogTrigger as-child>
+                                        <DropdownMenuItem @select.prevent class="text-destructive focus:text-destructive focus:bg-destructive/10">
+                                            <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" /><span>Delete</span>
+                                        </DropdownMenuItem>
+                                    </AlertDialogTrigger>
+                                    <AlertDialogContent>
+                                        <AlertDialogHeader>
+                                            <AlertDialogTitle>Delete '{{ template.name }}'?</AlertDialogTitle>
+                                            <AlertDialogDescription>
+                                                This action cannot be undone. This will permanently delete the template. Servers created from this template will not be affected.
+                                            </AlertDialogDescription>
+                                        </AlertDialogHeader>
+                                        <AlertDialogFooter>
+                                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                                            <AlertDialogAction @click="handleDelete(template)">Confirm Delete</AlertDialogAction>
+                                        </AlertDialogFooter>
+                                    </AlertDialogContent>
+                                </AlertDialog>
                             </DropdownMenuContent>
                         </DropdownMenu>
                     </div>
@@ -141,8 +193,14 @@ async function onSubmit(values: any) {
                 <CardContent class="flex-grow">
                     <div class="text-sm text-muted-foreground">
                         <div class="flex items-center gap-2">
-                            <Icon name="mdi:minecraft" class="size-4" /><span>{{ template.serverType }} {{
-                                template.minecraftVersion }}</span>
+                            <Icon v-if="template.modpackType" name="lucide:box" class="size-4" />
+                            <Icon v-else name="mdi:minecraft" class="size-4" />
+                            <span v-if="template.modpackType" class="capitalize">{{ template.modpackType.toLowerCase() }} Modpack</span>
+                            <span v-else>{{ template.serverType }} {{ template.minecraftVersion }}</span>
+                        </div>
+                         <div v-if="template.modpackURL" class="flex items-center gap-2 mt-1 truncate">
+                            <Icon name="lucide:link" class="size-4" />
+                            <span class="truncate">{{ template.modpackURL }}</span>
                         </div>
                     </div>
                 </CardContent>
@@ -162,7 +220,7 @@ async function onSubmit(values: any) {
         <Sheet :open="isSheetOpen" @update:open="isSheetOpen = $event">
             <SheetContent class="sm:max-w-[650px] w-full p-0" side="right">
                 <Form class="flex flex-col h-full" v-if="editingTemplate" :validation-schema="formSchema"
-                    :initial-values="editingTemplate" @submit="onSubmit">
+                    :initial-values="editingTemplate" @submit="onSubmit" v-slot="{ values, setFieldValue }">
                     <SheetHeader class="p-6">
                         <SheetTitle>{{ editingTemplate.id ? 'Edit Template' : 'Create New Template' }}</SheetTitle>
                         <SheetDescription>Configure the server blueprint details.</SheetDescription>
@@ -183,19 +241,72 @@ async function onSubmit(values: any) {
                                     <FormMessage />
                                 </FormItem>
                             </FormField>
-                            <FormField name="serverType" v-slot="{ componentField }">
+
+                            <FormField name="installType" v-slot="{ value, setValue }">
                                 <FormItem>
-                                    <FormLabel>Server Type</FormLabel><Select v-bind="componentField">
-                                        <FormControl>
-                                            <SelectTrigger>
-                                                <SelectValue />
-                                            </SelectTrigger>
-                                        </FormControl>
-                                        <SelectContent>
-                                            <SelectItem v-for="type in serverTypes" :key="type" :value="type">{{ type }}
-                                            </SelectItem>
-                                        </SelectContent>
-                                    </Select>
+                                    <FormLabel>Install Type</FormLabel>
+                                    <RadioGroup :model-value="value" @update:model-value="setValue" class="flex gap-4 pt-2">
+                                        <FormItem class="flex items-center gap-2 space-y-0"><FormControl><RadioGroupItem value="standard" /></FormControl><FormLabel class="font-normal">Standard</FormLabel></FormItem>
+                                        <FormItem class="flex items-center gap-2 space-y-0"><FormControl><RadioGroupItem value="modpack" /></FormControl><FormLabel class="font-normal">Modpack</FormLabel></FormItem>
+                                    </RadioGroup>
+                                    <FormMessage />
+                                </FormItem>
+                            </FormField>
+
+                            <template v-if="values.installType === 'standard'">
+                                <FormField name="serverType" v-slot="{ componentField }"><FormItem><FormLabel>Server Type</FormLabel><Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="type in serverTypes" :key="type" :value="type">{{ type }}</SelectItem></SelectContent></Select><FormMessage /></FormItem></FormField>
+                                <FormField name="minecraftVersion" v-slot="{ componentField }"><FormItem><FormLabel>Minecraft Version</FormLabel><Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="v in minecraftVersions" :key="v" :value="v">{{ v }}</SelectItem></SelectContent></Select><FormMessage /></FormItem></FormField>
+                            </template>
+
+                            <template v-if="values.installType === 'modpack'">
+                                <FormField name="modpackType" v-slot="{ componentField }">
+                                    <FormItem>
+                                        <FormLabel>Modpack Provider</FormLabel>
+                                        <Select v-bind="componentField">
+                                            <FormControl><SelectTrigger><SelectValue placeholder="Select provider..." /></SelectTrigger></FormControl>
+                                            <SelectContent>
+                                                <SelectItem value="CURSEFORGE">CurseForge</SelectItem>
+                                                <SelectItem value="FTB">Feed The Beast</SelectItem>
+                                            </SelectContent>
+                                        </Select>
+                                        <FormMessage />
+                                    </FormItem>
+                                </FormField>
+                                <FormField name="modpackURL" v-slot="{ componentField }">
+                                    <FormItem>
+                                        <FormLabel>Modpack URL</FormLabel>
+                                        <FormControl><Input placeholder="https://www.curseforge.com/minecraft/modpacks/..." v-bind="componentField" /></FormControl>
+                                        <FormDescription>The full URL to the modpack page (e.g., CurseForge page).</FormDescription>
+                                        <FormMessage />
+                                    </FormItem>
+                                </FormField>
+                                 <Alert>
+                                    <Icon name="lucide:info" class="h-4 w-4" />
+                                    <AlertDescription>Modpack installs automatically determine the required Minecraft and Forge/Fabric version.</AlertDescription>
+                                </Alert>
+                            </template>
+                            <FormField name="javaVersion" v-slot="{ componentField }">
+                                <FormItem>
+                                    <FormLabel>Java Version</FormLabel>
+                                    <Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="v in javaVersions" :key="v" :value="v">Java {{ v }}</SelectItem></SelectContent></Select>
+                                    <FormMessage />
+                                </FormItem>
+                            </FormField>
+                             <FormField name="jvmArgs" v-slot="{ value, setValue }">
+                                <FormItem>
+                                    <FormLabel>JVM Arguments</FormLabel>
+                                    <FormControl>
+                                        <TagsInput :model-value="value" @update:model-value="setValue">
+                                            <TagsInputItem v-for="item in value" :key="item" :value="item">
+                                                <TagsInputItemText />
+                                                <TagsInputItemDelete />
+                                            </TagsInputItem>
+                                            <TagsInputInput placeholder="e.g., -XX:+UseG1GC" />
+                                        </TagsInput>
+                                    </FormControl>
+                                    <FormDescription>
+                                        Advanced JVM arguments. Memory (-Xmx, -Xms) is set automatically.
+                                    </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             </FormField>

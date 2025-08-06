@@ -28,6 +28,8 @@ export const useServerStore = defineStore('server', {
     isLoadingList: false,
     isLoadingCurrent: false,
     isLoadingSettings: false,
+    currentFileContent: null as string | null,
+    isLoadingFileContent: false,
   }),
   actions: {
     async fetchServers() {
@@ -50,7 +52,6 @@ export const useServerStore = defineStore('server', {
         this.isLoadingCurrent = false;
         return this.currentServer; // Return data
     },
-    // --- Other actions remain unchanged ---
     async fetchSettings(id: string) {
         if (!this.currentServer) return;
         this.isLoadingSettings = true;
@@ -58,8 +59,8 @@ export const useServerStore = defineStore('server', {
         if (data.value) {
             const settings = data.value;
             Object.keys(settings).forEach(key => {
-                if (settings[key] === 'true') settings[key] = true;
-                else if (settings[key] === 'false') settings[key] = false;
+                if (settings[key] === 'true') settings[key] = 'true';
+                else if (settings[key] === 'false') settings[key] = 'false';
             });
             this.currentServer.settings = settings;
         }
@@ -69,6 +70,22 @@ export const useServerStore = defineStore('server', {
         const { data, error } = await useApiFetch<Server>('/servers', { method: 'POST', body: { name, templateId } });
         if(error.value) throw error.value;
         if(data.value) this.servers.push(data.value);
+    },
+    async createServerFromUpload(name: string, javaVersion: string, maxMemoryMB: number, file: File) {
+        const formData = new FormData();
+        formData.append('name', name);
+        formData.append('javaVersion', javaVersion);
+        formData.append('maxMemoryMB', String(maxMemoryMB));
+        formData.append('file', file);
+
+        const { data, error } = await useApiFetch<Server>('/servers/upload', {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (error.value) throw error.value;
+
+        if (data.value) this.servers.push(data.value);
     },
     async performServerAction(id: string, action: 'start' | 'stop' | 'restart') {
         const { error } = await useApiFetch(`/servers/${id}/action`, { method: 'POST', body: { action } });
@@ -91,6 +108,27 @@ export const useServerStore = defineStore('server', {
         const index = this.servers.findIndex(s => s.id === updatedServer.id);
         if (index !== -1) Object.assign(this.servers[index], updatedServer);
         if (this.currentServer && this.currentServer.id === updatedServer.id) Object.assign(this.currentServer, updatedServer);
+    },
+    async fetchFileContent(id: string, path: string) {
+        this.isLoadingFileContent = true;
+        this.currentFileContent = null;
+        const { data, error } = await useApiFetch<string>(`/servers/${id}/files/content?path=${encodeURIComponent(path)}`, {
+            parseResponse: (responseText) => responseText,
+        });
+        if (error.value) {
+            this.isLoadingFileContent = false;
+            throw error.value;
+        }
+        this.currentFileContent = data.value;
+        this.isLoadingFileContent = false;
+        return data.value;
+    },
+    async updateFileContent(id: string, path: string, content: string) {
+        const { error } = await useApiFetch(`/servers/${id}/files/update`, {
+            method: 'POST',
+            body: { path, content },
+        });
+        if (error.value) throw error.value;
     }
   },
 });

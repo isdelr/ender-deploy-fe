@@ -8,7 +8,9 @@ type Template = {
     description: string;
     minecraftVersion: string;
     javaVersion: string;
-    serverType: 'Vanilla' | 'Forge' | 'Fabric' | 'Paper';
+    serverType: 'Vanilla' | 'Forge' | 'Fabric' | 'Paper'; // Standard install type
+    modpackType?: string; // e.g., "CURSEFORGE", "FTB"
+    modpackURL?: string; // URL to the modpack page or file
     minMemoryMB: number;
     maxMemoryMB: number;
     tags: string[];
@@ -41,6 +43,13 @@ export const useTemplateStore = defineStore('template', {
         if(error.value) throw error.value;
 
         await this.fetchTemplates();
+    },
+    async deleteTemplate(templateId: string) {
+        const { error } = await useApiFetch(`/templates/${templateId}`, {
+            method: 'DELETE',
+        });
+        if (error.value) throw error.value;
+        this.templates = this.templates.filter(t => t.id !== templateId);
     }
   },
 });
