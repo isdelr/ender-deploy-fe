@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { useServerStore } from '~/stores/server';
+import 'vue-sonner/style.css'
 
 const config = useRuntimeConfig();
 const serverStore = useServerStore();

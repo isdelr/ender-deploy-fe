@@ -29,12 +29,12 @@ const colorModeTooltip = computed(() => {
 });
 
 const handleLogout = () => {
-    authStore.logout();
-    toast.info('You have been logged out.');
+  authStore.logout();
+  toast.info('You have been logged out.');
 };
 
 const userInitials = computed(() => {
-    return authStore.user?.username.substring(0, 2).toUpperCase() || '..';
+  return authStore.user?.username.substring(0, 2).toUpperCase() || '..';
 });
 </script>
 
@@ -42,7 +42,8 @@ const userInitials = computed(() => {
   <Sidebar collapsible="icon">
     <SidebarHeader>
       <div class="flex items-center gap-2">
-        <Icon name="mdi:minecraft" size="2rem" class="text-primary" />
+        <Icon v-if="colorMode.value === 'light'" name="mdi:minecraft" size="2rem" class="text-primary" />
+        <Icon v-if="colorMode.value === 'dark'" name="ed:enderman" size="2rem"/>
         <span class="text-lg font-semibold">EnderDeploy</span>
       </div>
     </SidebarHeader>
@@ -50,10 +51,10 @@ const userInitials = computed(() => {
     <SidebarContent class="p-2">
       <div class="mb-2">
         <NuxtLink to="/servers/create">
-            <Button size="lg" class="h-10 w-full justify-center">
-              <Icon name="lucide:plus" class="size-5" />
-              <span class="group-data-[collapsible=icon]:hidden">Create Server</span>
-            </Button>
+          <Button size="lg" class="h-10 w-full justify-center">
+            <Icon name="lucide:plus" class="size-5" />
+            <span class="group-data-[collapsible=icon]:hidden">Create Server</span>
+          </Button>
         </NuxtLink>
       </div>
 

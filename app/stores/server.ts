@@ -1,3 +1,4 @@
+// Path: ender-deploy-fe/app/stores/server.ts
 import { defineStore } from 'pinia';
 import { useApiFetch } from '~/composables/useApiFetch';
 
@@ -11,13 +12,18 @@ interface Server {
   name: string;
   status: ServerStatus;
   minecraftVersion: string;
-  modpack?: { name: string; version: string; };
   javaVersion: string;
   players: { current: number; max: number };
   resources: { cpu: number; ram: number; storage: number };
   ipAddress: string;
   port: number;
+  maxMemoryMB: number;
   settings?: Record<string, any>;
+}
+
+export interface SystemStats {
+    totalRAM: number;
+    allocatedRAM: number;
 }
 
 
@@ -25,6 +31,7 @@ export const useServerStore = defineStore('server', {
   state: () => ({
     servers: [] as Server[],
     currentServer: null as Server | null,
+    systemStats: null as SystemStats | null,
     isLoadingList: false,
     isLoadingCurrent: false,
     isLoadingSettings: false,
@@ -40,6 +47,14 @@ export const useServerStore = defineStore('server', {
       }
       this.isLoadingList = false;
       return this.servers; // Return data for useAsyncData
+    },
+    async fetchSystemStats() {
+        const { data } = await useApiFetch<SystemStats>('/system-stats');
+        if (data.value) {
+            this.systemStats = data.value;
+        }
+                    console.log(this.systemStats);
+        return this.systemStats;
     },
     async fetchServerById(id: string) {
         this.isLoadingCurrent = true;
@@ -59,8 +74,8 @@ export const useServerStore = defineStore('server', {
         if (data.value) {
             const settings = data.value;
             Object.keys(settings).forEach(key => {
-                if (settings[key] === 'true') settings[key] = 'true';
-                else if (settings[key] === 'false') settings[key] = 'false';
+                if (settings[key] === 'true') settings[key] = "true";
+                else if (settings[key] === 'false') settings[key] = "false";
             });
             this.currentServer.settings = settings;
         }
@@ -71,10 +86,11 @@ export const useServerStore = defineStore('server', {
         if(error.value) throw error.value;
         if(data.value) this.servers.push(data.value);
     },
-    async createServerFromUpload(name: string, javaVersion: string, maxMemoryMB: number, file: File) {
+    async createServerFromUpload(name: string, javaVersion: string, serverJar: string, maxMemoryMB: number, file: File) {
         const formData = new FormData();
         formData.append('name', name);
         formData.append('javaVersion', javaVersion);
+        formData.append('serverExecutable', serverJar);
         formData.append('maxMemoryMB', String(maxMemoryMB));
         formData.append('file', file);
 
@@ -86,6 +102,21 @@ export const useServerStore = defineStore('server', {
         if (error.value) throw error.value;
 
         if (data.value) this.servers.push(data.value);
+    },
+    async listZipContents(file: File): Promise<string[]> {
+        const formData = new FormData();
+        formData.append('file', file);
+    
+        const { data, error } = await useApiFetch<string[]>('/servers/upload/list-contents', {
+            method: 'POST',
+            body: formData,
+        });
+    
+        if (error.value) {
+            throw error.value;
+        }
+        
+        return data.value || [];
     },
     async performServerAction(id: string, action: 'start' | 'stop' | 'restart') {
         const { error } = await useApiFetch(`/servers/${id}/action`, { method: 'POST', body: { action } });

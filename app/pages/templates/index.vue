@@ -1,99 +1,173 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { ref, onMounted, computed } from 'vue';
 import { toTypedSchema } from '@vee-validate/zod';
 import * as z from 'zod';
 import { useTemplateStore } from '~/stores/template';
+import { useServerStore } from '~/stores/server';
 import { toast } from 'vue-sonner';
+import {
+  Combobox,
+  ComboboxAnchor,
+  ComboboxInput,
+  ComboboxEmpty,
+  ComboboxGroup,
+  ComboboxItem,
+  ComboboxItemIndicator,
+  ComboboxList,
+  ComboboxTrigger,
+} from '~/components/ui/combobox';
+import { Slider } from '~/components/ui/slider';
+import { cn } from '~/lib/utils';
+import { Check, ChevronsUpDown } from 'lucide-vue-next';
 
-// The definePageMeta block has been removed.
+
 useHead({ title: 'Templates - EnderDeploy' });
 
 const templateStore = useTemplateStore();
+const serverStore = useServerStore();
 
-// REFACTORED: Fetch templates on initial load for SSR.
-const { pending: isLoading, error } = await useAsyncData('templates-list', () =>
+
+const { pending: isLoading, error } = await useAsyncData('templates-data', () =>
     templateStore.fetchTemplates()
 );
 
-const formSchema = toTypedSchema(
+const availableRam = computed(() => {
+  if (!serverStore.systemStats) return 4096; // Default fallback
+  return serverStore.systemStats.totalRAM - serverStore.systemStats.allocatedRAM;
+});
+
+
+const MAX_FILE_SIZE = 500 * 1024 * 1024; // 500MB
+const ACCEPTED_FILE_TYPES = ["application/zip", "application/x-zip-compressed"];
+
+const createSchema = toTypedSchema(
+    z.object({
+        name: z.string().min(3, 'Name must be at least 3 characters.'),
+        description: z.string().optional(),
+        minecraftVersion: z.string({ required_error: 'Minecraft Version is required.' }),
+        javaVersion: z.string({ required_error: 'Java Version is required.' }),
+        maxMemoryMB: z.array(z.number()).min(1).max(1),
+        file: z
+            .instanceof(File, { message: "A .zip file is required." })
+            .refine((file) => file.size <= MAX_FILE_SIZE, `Max file size is 500MB.`)
+            .refine(
+                (file) => ACCEPTED_FILE_TYPES.includes(file.type),
+                "Only .zip files are supported."
+            ),
+        serverExecutable: z.string({ required_error: 'Please select an executable file.' }),
+    })
+);
+
+const editSchema = toTypedSchema(
     z.object({
         id: z.string().optional(),
         name: z.string().min(3, 'Name must be at least 3 characters.'),
         description: z.string().optional(),
-        installType: z.enum(['standard', 'modpack']),
-        // Standard
-        serverType: z.string().optional(),
-        minecraftVersion: z.string().optional(),
-        // Modpack
-        modpackType: z.string().optional(),
-        modpackURL: z.string().optional(),
-        // Common
-        javaVersion: z.string(),
-        minMemoryMB: z.number().positive(),
-        maxMemoryMB: z.number().positive(),
-        jvmArgs: z.array(z.string()).optional(),
-        tags: z.array(z.string()).optional(),
-        properties: z.record(z.string()).optional(),
-    }).superRefine((data, ctx) => {
-        if (data.installType === 'standard') {
-            if (!data.serverType) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Server Type is required.', path: ['serverType'] });
-            if (!data.minecraftVersion) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Minecraft Version is required.', path: ['minecraftVersion'] });
-        } else if (data.installType === 'modpack') {
-            if (!data.modpackType) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Provider is required.', path: ['modpackType'] });
-            if (!data.modpackURL) ctx.addIssue({ code: z.ZodIssueCode.custom, message: 'Modpack URL is required.', path: ['modpackURL'] });
-        }
     })
 );
 
-// Explicitly type Template for clarity
-type Template = Partial<z.infer<typeof formSchema>> & { id: string; name: string };
+type Template = Partial<z.infer<typeof createSchema>> & { id?: string; name?: string; description?: string, serverType?: string, minecraftVersion?: string, tags?: string[] };
+
 
 const isSheetOpen = ref(false);
-const editingTemplate = ref<Partial<Template>>({});
-const serverTypes = ['Vanilla', 'Paper', 'Forge', 'Fabric'];
-const minecraftVersions = ['1.21', '1.20.4', '1.20.1', '1.19.2', '1.18.2', '1.16.5'];
+const sheetMode = ref<'create' | 'edit'>('create');
+const editingTemplate = ref<Template>({});
 const javaVersions = ['8', '11', '17', '21'];
+const minecraftVersions = ref<string[]>([]);
+const zipFiles = ref<string[]>([]);
+const isParsingZip = ref(false);
+
+onMounted(async () => {
+    serverStore.fetchSystemStats();
+    if (templateStore.minecraftVersions.length === 0) {
+        minecraftVersions.value = await templateStore.fetchMinecraftVersions();
+    } else {
+        minecraftVersions.value = templateStore.minecraftVersions;
+    }
+});
 
 const createNewTemplate = () => {
+    sheetMode.value = 'create';
     editingTemplate.value = {
-        name: '', description: '', tags: [],
-        installType: 'standard',
-        serverType: 'Paper', minecraftVersion: minecraftVersions[0],
-        modpackType: 'CURSEFORGE', modpackURL: '',
+        name: '', description: '',
+        minecraftVersion: minecraftVersions.value.length > 0 ? minecraftVersions.value[0] : '',
         javaVersion: '17',
-        minMemoryMB: 1024, maxMemoryMB: 4096,
-        jvmArgs: [],
-        properties: { 'gamemode': 'survival', 'difficulty': 'easy', 'hardcore': 'false', 'max-players': '20', 'pvp': 'true', 'online-mode': 'true', 'view-distance': '10', 'simulation-distance': '10' },
+        maxMemoryMB: [4096],
     };
+    zipFiles.value = [];
     isSheetOpen.value = true;
 };
+
 const editTemplate = (template: Template) => {
-    const templateCopy = JSON.parse(JSON.stringify(template));
-    // Determine installType for the form based on whether modpack fields exist
-    templateCopy.installType = (templateCopy.modpackType && templateCopy.modpackURL) ? 'modpack' : 'standard';
-    editingTemplate.value = templateCopy;
+    sheetMode.value = 'edit';
+    editingTemplate.value = JSON.parse(JSON.stringify({
+        id: template.id,
+        name: template.name,
+        description: template.description,
+    }));
     isSheetOpen.value = true;
 };
-async function onSubmit(values: any) {
-    // Clean up data before sending to backend
-    if (values.installType === 'standard') {
-        values.modpackType = null;
-        values.modpackURL = null;
-    } else {
-        values.serverType = null;
-        values.minecraftVersion = null;
-    }
+
+const handleFileChange = async (
+  event: Event,
+  fieldSetter: (file: File | undefined) => void,
+  formSetter: (field: string, value: any) => void
+) => {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  fieldSetter(file);
+  formSetter("serverExecutable", undefined);
+
+  if (file && ACCEPTED_FILE_TYPES.includes(file.type)) {
+    isParsingZip.value = true;
+    zipFiles.value = [];
     try {
-        await templateStore.saveTemplate(values);
-        toast.success(`Template '${values.name}' saved successfully!`);
-        isSheetOpen.value = false;
-    } catch (error: any) {
-        toast.error('Failed to save template', {
-            description: error.data?.message || 'An unknown error occurred.'
+      const files = await serverStore.listZipContents(file);
+      zipFiles.value = files;
+      if (files.length === 0) {
+        toast.info("No executables found", {
+          description: "We couldn't find any .jar or .sh files in the zip's root.",
         });
+      }
+    } catch (e: any) {
+      toast.error("Could not read .zip file.", {
+        description: e.data?.message || "The file might be corrupted.",
+      });
+    } finally {
+      isParsingZip.value = false;
     }
+  } else {
+    zipFiles.value = [];
+  }
+};
+
+async function onCreateSubmit(values: any) {
+    const payload = {
+        ...values,
+        maxMemoryMB: values.maxMemoryMB[0] // Extract value from slider's array
+    }
+    toast.promise(templateStore.createTemplateFromUpload(payload), {
+        loading: 'Creating template...',
+        success: () => {
+            isSheetOpen.value = false;
+            return `Template '${values.name}' created successfully!`;
+        },
+        error: (err: any) => err.data?.message || 'Failed to create template.'
+    });
 }
+
+async function onEditSubmit(values: any) {
+    toast.promise(templateStore.updateTemplate(values), {
+        loading: 'Updating template...',
+        success: () => {
+            isSheetOpen.value = false;
+            return `Template '${values.name}' updated successfully!`;
+        },
+        error: (err: any) => err.data?.message || 'Failed to update template.'
+    });
+}
+
 const handleDelete = (template: Template) => {
+    if (!template.id) return;
     toast.promise(templateStore.deleteTemplate(template.id), {
         loading: `Deleting template '${template.name}'...`,
         success: `Template '${template.name}' deleted successfully.`,
@@ -104,7 +178,7 @@ const handleDelete = (template: Template) => {
 
 <template>
     <div class="space-y-8">
-        <!-- Page Header (unchanged) -->
+        <!-- Page Header -->
         <header class="space-y-4">
             <Breadcrumb>
                 <BreadcrumbList>
@@ -130,11 +204,10 @@ const handleDelete = (template: Template) => {
             </div>
         </header>
 
-        <!-- REFACTORED: Use `pending` for skeletons -->
+        <!-- Loading / Error State -->
         <div v-if="isLoading" class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             <Skeleton v-for="i in 3" :key="i" class="h-56" />
         </div>
-
         <div v-else-if="error">
             <Card>
                 <CardHeader>
@@ -145,7 +218,7 @@ const handleDelete = (template: Template) => {
             </Card>
         </div>
 
-        <!-- Template Grid (unchanged) -->
+        <!-- Template Grid -->
         <div v-else class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
             <Card v-for="template in templateStore.templates" :key="template.id" class="flex flex-col">
                 <CardHeader>
@@ -160,16 +233,18 @@ const handleDelete = (template: Template) => {
                                     <Icon name="lucide:more-vertical" />
                                 </Button></DropdownMenuTrigger>
                             <DropdownMenuContent align="end">
-                                <DropdownMenuItem>
-                                    <Icon name="lucide:rocket" class="mr-2 h-4 w-4" /><span>Use Template</span>
-                                </DropdownMenuItem>
+                                <NuxtLink :to="`/servers/create?template=${template.id}`">
+                                    <DropdownMenuItem>
+                                        <Icon name="lucide:rocket" class="mr-2 h-4 w-4" /><span>Use Template</span>
+                                    </DropdownMenuItem>
+                                </NuxtLink>
                                 <DropdownMenuItem @click="editTemplate(template)">
                                     <Icon name="lucide:pencil" class="mr-2 h-4 w-4" /><span>Edit</span>
                                 </DropdownMenuItem>
                                 <DropdownMenuSeparator />
                                 <AlertDialog>
                                     <AlertDialogTrigger as-child>
-                                        <DropdownMenuItem @select.prevent class="text-destructive focus:text-destructive focus:bg-destructive/10">
+                                        <DropdownMenuItem @select.prevent variant="destructive">
                                             <Icon name="lucide:trash-2" class="mr-2 h-4 w-4" /><span>Delete</span>
                                         </DropdownMenuItem>
                                     </AlertDialogTrigger>
@@ -193,14 +268,12 @@ const handleDelete = (template: Template) => {
                 <CardContent class="flex-grow">
                     <div class="text-sm text-muted-foreground">
                         <div class="flex items-center gap-2">
-                            <Icon v-if="template.modpackType" name="lucide:box" class="size-4" />
-                            <Icon v-else name="mdi:minecraft" class="size-4" />
-                            <span v-if="template.modpackType" class="capitalize">{{ template.modpackType.toLowerCase() }} Modpack</span>
-                            <span v-else>{{ template.serverType }} {{ template.minecraftVersion }}</span>
+                            <Icon name="mdi:minecraft" class="size-4" />
+                            <span>{{ template.serverType }} {{ template.minecraftVersion }}</span>
                         </div>
-                         <div v-if="template.modpackURL" class="flex items-center gap-2 mt-1 truncate">
-                            <Icon name="lucide:link" class="size-4" />
-                            <span class="truncate">{{ template.modpackURL }}</span>
+                         <div class="flex items-center gap-2 mt-2">
+                            <Icon name="lucide:server" class="size-4" />
+                            <span>From {{ template.serverType === 'custom-zip' ? 'Zip Upload' : 'URL' }}</span>
                         </div>
                     </div>
                 </CardContent>
@@ -216,105 +289,123 @@ const handleDelete = (template: Template) => {
             </Button>
         </div>
 
-        <!-- Edit/Create Sheet (unchanged) -->
         <Sheet :open="isSheetOpen" @update:open="isSheetOpen = $event">
             <SheetContent class="sm:max-w-[650px] w-full p-0" side="right">
-                <Form class="flex flex-col h-full" v-if="editingTemplate" :validation-schema="formSchema"
-                    :initial-values="editingTemplate" @submit="onSubmit" v-slot="{ values, setFieldValue }">
+                <!-- CREATE FORM -->
+                <Form v-if="sheetMode === 'create'" class="flex flex-col h-full"
+                    :validation-schema="createSchema"
+                    :initial-values="editingTemplate"
+                    @submit="onCreateSubmit"
+                    v-slot="{ setFieldValue, values }">
                     <SheetHeader class="p-6">
-                        <SheetTitle>{{ editingTemplate.id ? 'Edit Template' : 'Create New Template' }}</SheetTitle>
-                        <SheetDescription>Configure the server blueprint details.</SheetDescription>
+                        <SheetTitle>Create New Template</SheetTitle>
+                        <SheetDescription>Upload a .zip file with your server files to create a reusable blueprint.</SheetDescription>
                     </SheetHeader>
                     <ScrollArea class="flex-grow">
                         <div class="p-6 space-y-4">
-                            <FormField name="name" v-slot="{ componentField }">
+                            <FormField name="name" v-slot="{ componentField }"><FormItem><FormLabel>Template Name</FormLabel><FormControl><Input placeholder="Custom Forge 1.19.2 Server" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+                            <FormField name="description" v-slot="{ componentField }"><FormItem><FormLabel>Description</FormLabel><FormControl><Textarea v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+                            <FormField name="file" v-slot="{ setValue, handleBlur }">
                                 <FormItem>
-                                    <FormLabel>Template Name</FormLabel>
-                                    <FormControl><Input v-bind="componentField" /></FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            </FormField>
-                            <FormField name="description" v-slot="{ componentField }">
-                                <FormItem>
-                                    <FormLabel>Description</FormLabel>
-                                    <FormControl><Textarea v-bind="componentField" /></FormControl>
-                                    <FormMessage />
-                                </FormItem>
-                            </FormField>
-
-                            <FormField name="installType" v-slot="{ value, setValue }">
-                                <FormItem>
-                                    <FormLabel>Install Type</FormLabel>
-                                    <RadioGroup :model-value="value" @update:model-value="setValue" class="flex gap-4 pt-2">
-                                        <FormItem class="flex items-center gap-2 space-y-0"><FormControl><RadioGroupItem value="standard" /></FormControl><FormLabel class="font-normal">Standard</FormLabel></FormItem>
-                                        <FormItem class="flex items-center gap-2 space-y-0"><FormControl><RadioGroupItem value="modpack" /></FormControl><FormLabel class="font-normal">Modpack</FormLabel></FormItem>
-                                    </RadioGroup>
-                                    <FormMessage />
-                                </FormItem>
-                            </FormField>
-
-                            <template v-if="values.installType === 'standard'">
-                                <FormField name="serverType" v-slot="{ componentField }"><FormItem><FormLabel>Server Type</FormLabel><Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="type in serverTypes" :key="type" :value="type">{{ type }}</SelectItem></SelectContent></Select><FormMessage /></FormItem></FormField>
-                                <FormField name="minecraftVersion" v-slot="{ componentField }"><FormItem><FormLabel>Minecraft Version</FormLabel><Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="v in minecraftVersions" :key="v" :value="v">{{ v }}</SelectItem></SelectContent></Select><FormMessage /></FormItem></FormField>
-                            </template>
-
-                            <template v-if="values.installType === 'modpack'">
-                                <FormField name="modpackType" v-slot="{ componentField }">
-                                    <FormItem>
-                                        <FormLabel>Modpack Provider</FormLabel>
-                                        <Select v-bind="componentField">
-                                            <FormControl><SelectTrigger><SelectValue placeholder="Select provider..." /></SelectTrigger></FormControl>
-                                            <SelectContent>
-                                                <SelectItem value="CURSEFORGE">CurseForge</SelectItem>
-                                                <SelectItem value="FTB">Feed The Beast</SelectItem>
-                                            </SelectContent>
-                                        </Select>
-                                        <FormMessage />
-                                    </FormItem>
-                                </FormField>
-                                <FormField name="modpackURL" v-slot="{ componentField }">
-                                    <FormItem>
-                                        <FormLabel>Modpack URL</FormLabel>
-                                        <FormControl><Input placeholder="https://www.curseforge.com/minecraft/modpacks/..." v-bind="componentField" /></FormControl>
-                                        <FormDescription>The full URL to the modpack page (e.g., CurseForge page).</FormDescription>
-                                        <FormMessage />
-                                    </FormItem>
-                                </FormField>
-                                 <Alert>
-                                    <Icon name="lucide:info" class="h-4 w-4" />
-                                    <AlertDescription>Modpack installs automatically determine the required Minecraft and Forge/Fabric version.</AlertDescription>
-                                </Alert>
-                            </template>
-                            <FormField name="javaVersion" v-slot="{ componentField }">
-                                <FormItem>
-                                    <FormLabel>Java Version</FormLabel>
-                                    <Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="v in javaVersions" :key="v" :value="v">Java {{ v }}</SelectItem></SelectContent></Select>
-                                    <FormMessage />
-                                </FormItem>
-                            </FormField>
-                             <FormField name="jvmArgs" v-slot="{ value, setValue }">
-                                <FormItem>
-                                    <FormLabel>JVM Arguments</FormLabel>
+                                    <FormLabel>Server Files (.zip)</FormLabel>
                                     <FormControl>
-                                        <TagsInput :model-value="value" @update:model-value="setValue">
-                                            <TagsInputItem v-for="item in value" :key="item" :value="item">
-                                                <TagsInputItemText />
-                                                <TagsInputItemDelete />
-                                            </TagsInputItem>
-                                            <TagsInputInput placeholder="e.g., -XX:+UseG1GC" />
-                                        </TagsInput>
+                                        <Input
+                                            type="file"
+                                            accept=".zip,application/zip,application/x-zip-compressed"
+                                            @change="(e) => handleFileChange(e, setValue, setFieldValue)"
+                                            @blur="handleBlur"
+                                        />
                                     </FormControl>
+                                    <FormMessage />
+                                </FormItem>
+                            </FormField>
+                            <FormField v-if="values.file" name="serverExecutable" v-slot="{ componentField }">
+                                <FormItem class="flex flex-col">
+                                <FormLabel>Executable File</FormLabel>
+                                <Combobox v-bind="componentField" class="w-full" open-on-click :disabled="zipFiles.length <= 0 || isParsingZip">
+                                    <FormControl>
+                                    <ComboboxAnchor>
+                                        <div class="relative w-full items-center">
+                                        <ComboboxInput placeholder="Select executable..." v-bind="componentField" />
+                                        <div class="absolute end-0 inset-y-0 flex items-center justify-center px-3">
+                                                <Icon v-if="isParsingZip" name="lucide:loader-circle" class="size-4 animate-spin"/>
+                                                <ChevronsUpDown v-else class="size-4 text-muted-foreground" />
+                                        </div>
+                                        </div>
+                                    </ComboboxAnchor>
+                                    </FormControl>
+                                    <ComboboxList>
+                                    <ComboboxEmpty> No executable found in zip. </ComboboxEmpty>
+                                    <ComboboxGroup>
+                                        <ComboboxItem v-for="file in zipFiles" :key="file" :value="file">
+                                        {{ file }}
+                                        <ComboboxItemIndicator>
+                                            <Check :class="cn('ml-auto h-4 w-4')" />
+                                        </ComboboxItemIndicator>
+                                        </ComboboxItem>
+                                    </ComboboxGroup>
+                                    </ComboboxList>
+                                </Combobox>
+                                <FormDescription>Select the main .jar or .sh file from your zip archive.</FormDescription>
+                                <FormMessage />
+                                </FormItem>
+                            </FormField>
+                            <div class="grid grid-cols-2 gap-4">
+                                <FormField name="minecraftVersion" v-slot="{ componentField }"><FormItem><FormLabel>Minecraft Version</FormLabel><FormControl><Input placeholder="e.g., 1.20.1" v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+                                <FormField name="javaVersion" v-slot="{ componentField }"><FormItem><FormLabel>Java Version</FormLabel><Select v-bind="componentField"><FormControl><SelectTrigger><SelectValue /></SelectTrigger></FormControl><SelectContent><SelectItem v-for="v in javaVersions" :key="v" :value="v">Java {{ v }}</SelectItem></SelectContent></Select><FormMessage /></FormItem></FormField>
+                            </div>
+                            <FormField name="maxMemoryMB" v-slot="{ componentField }">
+                                <FormItem>
+                                    <FormLabel>Max Server RAM</FormLabel>
+                                    <div class="flex items-center gap-4">
+                                        <FormControl>
+                                            <Slider
+                                                v-bind="componentField"
+                                                :min="512"
+                                                :max="availableRam"
+                                                :step="512"
+                                                class="w-full"
+                                            />
+                                        </FormControl>
+                                        <div class="font-mono text-sm w-28 text-center shrink-0 p-2 bg-muted rounded-md">
+                                            {{ values.maxMemoryMB ? values.maxMemoryMB[0] : 0 }} MB
+                                        </div>
+                                    </div>
                                     <FormDescription>
-                                        Advanced JVM arguments. Memory (-Xmx, -Xms) is set automatically.
+                                        The maximum memory for the Minecraft server. Min memory will be set to 1GB.
+                                         <span v-if="serverStore.systemStats">
+                                            Available on system: {{ availableRam }}MB
+                                        </span>
                                     </FormDescription>
                                     <FormMessage />
                                 </FormItem>
                             </FormField>
+
                         </div>
                     </ScrollArea>
                     <SheetFooter class="p-6 border-t mt-auto bg-background/95">
                         <Button type="button" variant="outline" @click="isSheetOpen = false">Cancel</Button>
-                        <Button type="submit">Save Template</Button>
+                        <Button type="submit">Create Template</Button>
+                    </SheetFooter>
+                </Form>
+                 <!-- EDIT FORM -->
+                <Form v-if="sheetMode === 'edit'" class="flex flex-col h-full"
+                    :validation-schema="editSchema"
+                    :initial-values="editingTemplate"
+                    @submit="onEditSubmit">
+                    <SheetHeader class="p-6">
+                        <SheetTitle>Edit Template</SheetTitle>
+                        <SheetDescription>Update the template's name and description.</SheetDescription>
+                    </SheetHeader>
+                    <ScrollArea class="flex-grow">
+                        <div class="p-6 space-y-4">
+                            <FormField name="name" v-slot="{ componentField }"><FormItem><FormLabel>Template Name</FormLabel><FormControl><Input v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+                            <FormField name="description" v-slot="{ componentField }"><FormItem><FormLabel>Description</FormLabel><FormControl><Textarea v-bind="componentField" /></FormControl><FormMessage /></FormItem></FormField>
+                        </div>
+                    </ScrollArea>
+                    <SheetFooter class="p-6 border-t mt-auto bg-background/95">
+                        <Button type="button" variant="outline" @click="isSheetOpen = false">Cancel</Button>
+                        <Button type="submit">Save Changes</Button>
                     </SheetFooter>
                 </Form>
             </SheetContent>

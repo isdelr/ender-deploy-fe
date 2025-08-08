@@ -2,6 +2,6 @@
   <NuxtLayout>
     <NuxtRouteAnnouncer />
     <NuxtPage />
-    <Toaster rich-colors position="top-right" />
+    <Toaster position="bottom-right" />
   </NuxtLayout>
 </template>

@@ -46,6 +46,9 @@
   --color-minecraft-green-foreground: var(--minecraft-green-foreground);
   --color-minecraft-dark-green: var(--minecraft-dark-green);
   --color-minecraft-emerald: var(--minecraft-emerald);
+  --color-enderman-purple: var(--enderman-purple);
+  --color-enderman-purple-foreground: var(--enderman-purple-foreground);
+  --color-enderman-dark: var(--enderman-dark);
   --color-success: var(--success);
   --color-success-foreground: var(--success-foreground);
   --color-warning: var(--warning);
@@ -96,9 +99,9 @@
   --accent: oklch(0.92 0.05 142.495); /* Light green accent */
   --accent-foreground: oklch(0.25 0.08 142.495); /* Dark green text */
 
-  /* Destructive = Professional red */
-  --destructive: oklch(0.55 0.22 27.325); /* Professional red */
-  --destructive-foreground: oklch(0.98 0.015 27.325);
+  /* Destructive = FIXED - Higher contrast red */
+  --destructive: oklch(0.70 0.20 15.686); /* Brighter, more saturated red */
+  --destructive-foreground: oklch(0.62 0.28 15.686); /* Pure white foreground */
 
   --border: oklch(0.88 0.008 258.338); /* Subtle borders */
   --input: oklch(0.96 0.006 258.338); /* Input backgrounds */
@@ -129,6 +132,11 @@
   --minecraft-dark-green: oklch(0.35 0.12 142.495); /* Dark green variant */
   --minecraft-emerald: oklch(0.65 0.18 150.861); /* Bright emerald accent */
 
+  /* Enderman colors for dark mode (light mode fallback) */
+  --enderman-purple: oklch(0.45 0.15 285.874);
+  --enderman-purple-foreground: oklch(0.98 0.01 285.874);
+  --enderman-dark: oklch(0.12 0.02 285.874);
+
   --success: oklch(0.55 0.15 142.495); /* Green success */
   --success-foreground: oklch(0.98 0.005 142.495);
   --warning: oklch(0.68 0.15 70.08); /* Minecraft gold warning */
@@ -136,66 +144,71 @@
 }
 
 .dark {
-  /* Dark theme - Professional dark with Minecraft accents */
-  --background: oklch(0.08 0.015 258.338); /* Deep professional dark */
-  --foreground: oklch(0.92 0.008 142.495); /* Light green-tinted text */
+  /* Dark theme - ENDERMAN THEMED with enhanced contrast */
+  --background: oklch(0.05 0.02 285.874); /* Deep enderman black with purple tint */
+  --foreground: oklch(0.92 0.06 285.874); /* Light purple-tinted text */
 
-  --card: oklch(0.12 0.015 258.338); /* Dark cards with subtle blue */
-  --card-foreground: oklch(0.92 0.008 142.495);
+  --card: oklch(0.08 0.03 285.874); /* Dark cards with purple tint - more contrast */
+  --card-foreground: oklch(0.92 0.06 285.874);
 
-  --popover: oklch(0.1 0.015 258.338);
-  --popover-foreground: oklch(0.92 0.008 142.495);
+  --popover: oklch(0.06 0.02 285.874); /* Even darker popover for contrast */
+  --popover-foreground: oklch(0.92 0.06 285.874);
 
-  /* Primary = Bright Minecraft green */
-  --primary: oklch(0.68 0.18 142.495); /* Brighter green for dark mode */
-  --primary-foreground: oklch(0.08 0.015 258.338);
+  /* Primary = ENDERMAN PURPLE - like their glowing eyes */
+  --primary: oklch(0.72 0.22 285.874); /* Bright enderman purple */
+  --primary-foreground: oklch(0.05 0.02 285.874); /* Dark enderman background */
 
-  /* Secondary = Dark professional gray */
-  --secondary: oklch(0.18 0.015 258.338);
-  --secondary-foreground: oklch(0.88 0.008 142.495);
+  /* Secondary = Enhanced contrast gray with purple tint */
+  --secondary: oklch(0.12 0.04 285.874); /* Darker secondary with purple */
+  --secondary-foreground: oklch(0.88 0.08 285.874);
 
-  --muted: oklch(0.15 0.015 258.338);
-  --muted-foreground: oklch(0.65 0.012 142.495); /* Subtle green tint */
+  --muted: oklch(0.10 0.03 285.874); /* Darker muted with better contrast */
+  --muted-foreground: oklch(0.65 0.08 285.874); /* Purple-tinted muted text */
 
-  /* Accent = Vibrant green highlight */
-  --accent: oklch(0.25 0.08 142.495); /* Dark green accent */
-  --accent-foreground: oklch(0.88 0.12 142.495); /* Bright green text */
+  /* Accent = Vibrant purple highlight */
+  --accent: oklch(0.18 0.08 285.874); /* Dark purple accent with better contrast */
+  --accent-foreground: oklch(0.88 0.15 285.874); /* Bright purple text */
 
-  /* Destructive = Bright red for dark mode */
-  --destructive: oklch(0.65 0.25 27.325);
-  --destructive-foreground: oklch(0.95 0.015 27.325);
+  /* Destructive = Enhanced contrast red for dark mode */
+  --destructive: oklch(0.68 0.28 15.686); /* Bright red with high saturation */
+  --destructive-foreground: oklch(0.95 0.02 15.686); /* Near-white foreground */
 
-  --border: oklch(0.22 0.015 258.338); /* Subtle dark borders */
-  --input: oklch(0.15 0.015 258.338);
-  --ring: oklch(0.68 0.18 142.495); /* Bright green focus */
+  --border: oklch(0.3539 0.199 285.874); /* Purple-tinted borders with more contrast */
+  --input:  oklch(0.20 0.22 285.874); /* Darker inputs for better contrast */
+  --ring: oklch(0.72 0.22 285.874); /* Bright enderman purple focus */
 
-  /* Chart colors - Enhanced for dark mode */
-  --chart-1: oklch(0.68 0.18 142.495); /* Bright green */
+  /* Chart colors - Enderman themed palette */
+  --chart-1: oklch(0.72 0.22 285.874); /* Primary enderman purple */
   --chart-2: oklch(0.75 0.15 70.08); /* Bright gold */
   --chart-3: oklch(0.65 0.18 258.338); /* Bright blue */
   --chart-4: oklch(0.72 0.22 15.686); /* Bright red */
-  --chart-5: oklch(0.68 0.15 285.874); /* Bright purple */
+  --chart-5: oklch(0.68 0.18 315.874); /* Pink-purple variant */
 
-  /* Sidebar - Even darker for contrast */
-  --sidebar: oklch(0.06 0.015 258.338); /* Very dark sidebar */
-  --sidebar-foreground: oklch(0.88 0.008 142.495);
-  --sidebar-primary: oklch(0.68 0.18 142.495);
-  --sidebar-primary-foreground: oklch(0.08 0.015 258.338);
-  --sidebar-accent: oklch(0.25 0.08 142.495);
-  --sidebar-accent-foreground: oklch(0.88 0.12 142.495);
-  --sidebar-border: oklch(0.18 0.015 258.338);
-  --sidebar-ring: oklch(0.68 0.18 142.495);
+  /* Sidebar - Maximum contrast enderman theme */
+  --sidebar: oklch(0.03 0.015 285.874); /* Nearly black sidebar with purple hint */
+  --sidebar-foreground: oklch(0.88 0.08 285.874);
+  --sidebar-primary: oklch(0.72 0.22 285.874);
+  --sidebar-primary-foreground: oklch(0.05 0.02 285.874);
+  --sidebar-accent: oklch(0.18 0.08 285.874);
+  --sidebar-accent-foreground: oklch(0.88 0.15 285.874);
+  --sidebar-border: oklch(0.12 0.04 285.874); /* More visible borders */
+  --sidebar-ring: oklch(0.72 0.22 285.874);
 
-  /* Custom Minecraft colors - Enhanced for dark mode */
-  --minecraft-green: oklch(0.68 0.18 142.495);
-  --minecraft-green-foreground: oklch(0.08 0.015 258.338);
+  /* Custom Enderman colors - Enhanced for dark mode */
+  --minecraft-green: oklch(0.68 0.18 142.495); /* Keep some green for servers */
+  --minecraft-green-foreground: oklch(0.05 0.02 285.874);
   --minecraft-dark-green: oklch(0.45 0.15 142.495);
-  --minecraft-emerald: oklch(0.78 0.2 150.861); /* Very bright emerald */
+  --minecraft-emerald: oklch(0.78 0.2 150.861);
 
-  --success: oklch(0.68 0.18 142.495);
-  --success-foreground: oklch(0.08 0.015 258.338);
+  /* Enderman theme colors */
+  --enderman-purple: oklch(0.72 0.22 285.874); /* Bright enderman eyes */
+  --enderman-purple-foreground: oklch(0.05 0.02 285.874);
+  --enderman-dark: oklch(0.08 0.03 285.874); /* Enderman body color */
+
+  --success: oklch(0.68 0.18 142.495); /* Keep green for success */
+  --success-foreground: oklch(0.05 0.02 285.874);
   --warning: oklch(0.75 0.15 70.08);
-  --warning-foreground: oklch(0.08 0.015 258.338);
+  --warning-foreground: oklch(0.05 0.02 285.874);
 }
 
 @layer base {
@@ -213,14 +226,20 @@
     background-size: 20px 20px;
   }
 
-  /* Dark mode gets a different subtle texture */
+  /* Dark mode gets an enderman-inspired subtle texture */
   .dark body {
-    background-image: radial-gradient(
-      circle at 1px 1px,
-      rgba(255, 255, 255, 0.02) 1px,
-      transparent 0
-    );
-    background-size: 24px 24px;
+    background-image: 
+      radial-gradient(
+        circle at 1px 1px,
+        rgba(138, 43, 226, 0.03) 1px,
+        transparent 0
+      ),
+      linear-gradient(
+        0deg,
+        transparent 98%,
+        rgba(138, 43, 226, 0.01) 100%
+      );
+    background-size: 24px 24px, 100% 4px;
   }
 }
 
@@ -234,15 +253,67 @@
     background-color: oklch(from var(--minecraft-green) calc(l * 0.9) c h);
   }
 
+  /* Enderman themed utilities */
+  .enderman-purple {
+    @apply bg-enderman-purple text-enderman-purple-foreground;
+  }
+
+  .enderman-purple-hover:hover {
+    background-color: oklch(from var(--enderman-purple) calc(l * 1.1) c h);
+  }
+
+  .enderman-surface {
+    @apply bg-enderman-dark border-enderman-purple/20;
+  }
+
+  /* Enhanced server status with better contrast */
   .server-status-online {
-    @apply bg-success/10 text-success border-success/20;
+    @apply bg-success/15 text-success border-success/30;
   }
 
   .server-status-offline {
-    @apply bg-destructive/10 text-destructive border-destructive/20;
+    @apply bg-destructive/15 text-destructive border-destructive/30;
   }
 
   .server-status-starting {
-    @apply bg-warning/10 text-warning border-warning/20;
+    @apply bg-warning/15 text-warning border-warning/30;
+  }
+
+  /* Dark mode specific enhancements */
+  .dark .server-status-online {
+    @apply bg-success/20 text-success border-success/40;
+  }
+
+  .dark .server-status-offline {
+    @apply bg-destructive/20 text-destructive border-destructive/40;
+  }
+
+  .dark .server-status-starting {
+    @apply bg-warning/20 text-warning border-warning/40;
+  }
+
+  /* Surface contrast utilities for dark mode */
+  .surface-primary {
+    @apply bg-card border-border;
+  }
+
+  .dark .surface-primary {
+    @apply bg-enderman-dark border-enderman-purple/20;
+  }
+
+  .surface-secondary {
+    @apply bg-muted/50 border-border;
+  }
+
+  .dark .surface-secondary {
+    @apply bg-background border-enderman-purple/10;
+  }
+
+  .surface-elevated {
+    @apply bg-card shadow-sm border-border;
+  }
+
+  .dark .surface-elevated {
+    @apply bg-enderman-dark shadow-lg shadow-enderman-purple/5 border-enderman-purple/30;
   }
 }

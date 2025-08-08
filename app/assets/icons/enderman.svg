@@ -1,0 +1,20 @@
+<svg viewBox="0 0 32 32" xmlns="http://www.w3.org/2000/svg">
+  <rect 
+    x="1" 
+    y="1" 
+    width="30" 
+    height="30" 
+    rx="2"
+    fill="#242333" 
+  />
+
+
+  <g fill="#5d4bb3">
+    <rect x="5" y="14" width="9" height="4" rx="1"/>
+    <rect x="18" y="14" width="9" height="4" rx="1"/>
+  </g>
+  <g fill="#9d90ff">
+      <rect x="8" y="14" width="3" height="4" rx="1"/>
+    <rect x="21" y="14" width="3" height="4" rx="1"/>
+  </g>
+</svg>

@@ -1,86 +1,113 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import { useServerStore, type OnlinePlayer, type FileInfo, type ResourceDataPoint } from '~/stores/server';
 import { LineChart } from 'vue-chrts';
 import { toast } from 'vue-sonner';
 import FileEditorSheet from '~/components/file-editor-sheet.vue';
+// Import the new unified console
+import UnifiedConsole from '~/components/unified-console.vue';
 
+// --- Basic Setup ---
 const route = useRoute();
 const serverId = route.params.id as string;
 const serverStore = useServerStore();
 const config = useRuntimeConfig();
 
-// REFACTORED: Use useAsyncData to fetch server data.
-// This handles server-side fetching, loading state, and error handling.
+// --- Data Fetching ---
 const { data: server, pending: isLoadingCurrent, error } = await useAsyncData(`server-${serverId}`, async () => {
   const fetchedServer = await serverStore.fetchServerById(serverId);
   if (!fetchedServer) {
-    // This will show the Nuxt error page, which is better than a client-side redirect.
     throw createError({ statusCode: 404, statusMessage: 'Server Not Found', fatal: true });
   }
   return fetchedServer;
 }, {
-  // By picking data, we only transfer what's necessary from server to client payload.
   pick: ['id', 'name', 'status', 'ipAddress', 'minecraftVersion', 'javaVersion', 'resources', 'players']
 });
 
 useHead({ title: () => `${server.value?.name || 'Manage Server'} - EnderDeploy` });
 
+// --- WebSocket Management ---
+const dockerLogs = ref<string[]>([]);
+const rconHistory = ref<string[]>([]);
+const terminalHistory = ref<string[]>([]);
+
 const { status: wsStatus, data: wsData, send, open, close } = useWebSocket(
   `${config.public.wsBase}/servers/${serverId}`, {
   autoReconnect: true,
-  immediate: false, 
-}
-);
+  immediate: false,
+});
 
-// --- Page & Data Setup ---
-const resourceHistory = ref<ResourceDataPoint[]>([]);
-const consoleLogs = ref<string[]>([]);
-const onlinePlayers = ref<OnlinePlayer[]>([]);
-const files = ref<FileInfo[]>([]);
-const currentPath = ref('/');
-const consoleCommand = ref('');
-const isFilesLoading = ref(false);
-const kickReason = ref('');
-const consoleScrollArea = ref(null); // ADDED: Ref for auto-scrolling
-const isFileEditorOpen = ref(false);
-const editingFilePath = ref('');
-
-// Client-side specific logic
+// --- Lifecycle Hooks ---
 onMounted(() => {
   if (server.value) {
-    open(); // Open WebSocket connection now that we are on the client
-    handleTabChange('console');
+    open(); // Open the WebSocket connection
+    handleTabChange('overview');
   }
 });
 
 onUnmounted(() => {
   serverStore.currentServer = null;
-  close(); 
+  // Unsubscribe from logs before closing the connection
+  if (wsStatus.value === 'OPEN') {
+    send(JSON.stringify({ action: 'unsubscribe_docker_logs' }));
+  }
+  close();
 });
 
-// Watch for WebSocket messages
+// --- WebSocket Watchers ---
+// When the connection opens, subscribe to the Docker logs
+watch(wsStatus, (status) => {
+  if (status === 'OPEN') {
+    dockerLogs.value.push('[System] WebSocket connected. Subscribing to logs...');
+    send(JSON.stringify({ action: 'subscribe_docker_logs' }));
+  } else if (status === 'CLOSED') {
+    dockerLogs.value.push('[System] WebSocket disconnected. Attempting to reconnect...');
+  }
+});
+
+// Handle incoming messages from the WebSocket
 watch(wsData, (newMessage) => {
   try {
     const message = JSON.parse(newMessage);
-    if (message.action === 'log_message') {
-      consoleLogs.value.push(message.payload);
-      // Keep the console from growing indefinitely
-      if (consoleLogs.value.length > 500) consoleLogs.value.shift();
-      
-      // Auto-scroll to the bottom on new log
-      nextTick(() => {
-        const scrollEl = (consoleScrollArea.value as any)?.$el?.querySelector('[data-reka-scroll-area-viewport]');
-        if (scrollEl) {
-          scrollEl.scrollTop = scrollEl.scrollHeight;
-        }
-      });
+
+    if (message.action === 'console_output') {
+      const payload = message.payload;
+      switch (payload.source) {
+        case 'docker':
+          dockerLogs.value.push(payload.line);
+          if (dockerLogs.value.length > 500) dockerLogs.value.shift();
+          break;
+        case 'rcon':
+          if (payload.command) {
+            rconHistory.value.push(`> ${payload.command}`);
+          }
+          rconHistory.value.push(payload.line.replace(/\n/g, '<br>'));
+          break;
+        case 'terminal':
+          terminalHistory.value.push(payload.line);
+          break;
+        case 'system':
+          dockerLogs.value.push(`[SYSTEM] ${payload.line}`);
+          break;
+      }
     }
-  } catch (e) { /* Ignore non-JSON messages */ }
+  } catch (e) {
+     console.warn("Received non-JSON WebSocket message:", newMessage);
+  }
 });
 
-// --- Action and Helper Functions ---
+// --- Data and State for UI ---
+const resourceHistory = ref<ResourceDataPoint[]>([]);
+const onlinePlayers = ref<OnlinePlayer[]>([]);
+const files = ref<FileInfo[]>([]);
+const currentPath = ref('/');
+const isFilesLoading = ref(false);
+const kickReason = ref('');
+const isFileEditorOpen = ref(false);
+const editingFilePath = ref('');
+
+// --- Methods for UI ---
 const fetchFiles = async (path: string) => {
     isFilesLoading.value = true;
     const { data } = await useApiFetch<FileInfo[]>(`/servers/${serverId}/files?path=${encodeURIComponent(path)}`);
@@ -121,6 +148,19 @@ const navigateUp = () => {
     const parentPath = currentPath.value.substring(0, currentPath.value.lastIndexOf('/')) || '/';
     fetchFiles(parentPath);
 }
+
+const sendRconCommand = (command: string) => {
+  if (!command || wsStatus.value !== 'OPEN') return;
+  send(JSON.stringify({ action: 'send_rcon_command', payload: { command } }));
+}
+
+const sendTerminalCommand = (command: string) => {
+  if (!command || wsStatus.value !== 'OPEN') return;
+  terminalHistory.value.push(`/data # ${command}`); // Echo command locally for immediate feedback
+  send(JSON.stringify({ action: 'send_terminal_command', payload: { command } }));
+}
+
+// --- Utility/Helper Functions ---
 const formatBytes = (bytes: number, decimals = 2) => {
     if (bytes === 0) return '0 Bytes';
     const k = 1024;
@@ -159,12 +199,6 @@ const handleDeleteServer = () => {
     },
     error: 'Failed to delete server.'
   });
-}
-const sendConsoleCommand = () => {
-  if (!consoleCommand.value) return;
-  const message = JSON.stringify({ action: 'send_command', payload: { command: consoleCommand.value } });
-  send(message);
-  consoleCommand.value = '';
 }
 </script>
 
@@ -230,33 +264,28 @@ const sendConsoleCommand = () => {
 
     <div class="grid grid-cols-12 gap-6">
       <div class="col-span-12 lg:col-span-8 xl:col-span-9 space-y-6">
-        <Tabs default-value="console" class="w-full" @update:modelValue="handleTabChange">
+        <Tabs default-value="overview" class="w-full" @update:modelValue="handleTabChange">
             <TabsList class="w-full overflow-x-auto h-auto justify-start">
-                <TabsTrigger value="console"><Icon name="lucide:terminal" />Console</TabsTrigger>
                 <TabsTrigger value="overview"><Icon name="lucide:line-chart" />Overview</TabsTrigger>
+                <TabsTrigger value="console"><Icon name="lucide:terminal-square" />Console</TabsTrigger>
                 <TabsTrigger value="players"><Icon name="lucide:users" />Players</TabsTrigger>
                 <TabsTrigger value="files"><Icon name="lucide:folder-open" />File Manager</TabsTrigger>
                 <TabsTrigger value="backups"><Icon name="lucide:database-backup" />Backups</TabsTrigger>
                 <TabsTrigger value="schedules"><Icon name="lucide:timer" />Schedules</TabsTrigger>
                 <TabsTrigger value="settings"><Icon name="lucide:sliders-horizontal" />Settings</TabsTrigger>
             </TabsList>
-            <TabsContent value="console" class="mt-4">
-                <Card class="h-[600px] flex flex-col">
-                    <CardContent class="p-0 flex-1 flex flex-col">
-                        <ScrollArea ref="consoleScrollArea" class="flex-1 p-4 bg-gray-900/95 dark:bg-black/80 rounded-t-xl">
-                            <div class="text-xs font-mono text-white">
-                                <p v-for="(log, index) in consoleLogs" :key="index" class="whitespace-pre-wrap break-words leading-snug">{{ log }}</p>
-                            </div>
-                        </ScrollArea>
-                        <div class="p-2 border-t bg-card flex items-center gap-2">
-                            <Icon name="lucide:chevron-right" class="text-muted-foreground" />
-                            <Input v-model="consoleCommand" @keyup.enter="sendConsoleCommand" placeholder="Type a command..." class="bg-transparent border-none focus-visible:ring-0 focus-visible:ring-offset-0 shadow-none" />
-                            <Button @click="sendConsoleCommand">Send</Button>
-                        </div>
-                    </CardContent>
-                </Card>
-            </TabsContent>
             <TabsContent value="overview" class="mt-4"><Card><CardHeader><CardTitle>Resource History (30 mins)</CardTitle></CardHeader><CardContent><LineChart :data="resourceHistory" :categories="{ cpuUsage: { name: 'CPU', color: 'var(--color-chart-2)' }, ramUsage: { name: 'RAM', color: 'var(--color-chart-3)' }, }" :height="300" y-label="Usage (%)" x-grid-line y-grid-line :y-formatter="(val) => `${val}%`" /></CardContent></Card></TabsContent>
+            
+            <TabsContent value="console" class="mt-4">
+              <UnifiedConsole 
+                :rcon-history="rconHistory" 
+                :logs="dockerLogs" 
+                :terminal-history="terminalHistory" 
+                @rcon-command="sendRconCommand"
+                @terminal-command="sendTerminalCommand"
+              />
+            </TabsContent>
+
             <TabsContent value="players" class="mt-4"><Card><CardHeader><CardTitle>Online Players</CardTitle></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Player</TableHead><TableHead>UUID</TableHead><TableHead class="text-right">Actions</TableHead></TableRow></TableHeader><TableBody><TableRow v-for="player in onlinePlayers" :key="player.uuid"><TableCell class="font-medium flex items-center gap-2"><img :src="`https://cravatar.eu/helmavatar/${player.uuid || player.name}/32.png`" class="w-6 h-6 rounded" />{{player.name }}</TableCell><TableCell class="font-mono text-muted-foreground">{{ player.uuid }}</TableCell><TableCell class="text-right"><AlertDialog><AlertDialogTrigger as-child><Button variant="outline" size="sm">Kick</Button></AlertDialogTrigger><AlertDialogContent><AlertDialogHeader><AlertDialogTitle>Kick {{ player.name }}?</AlertDialogTitle><AlertDialogDescription>You can provide an optional reason below.</AlertDialogDescription></AlertDialogHeader><Input v-model="kickReason" placeholder="Reason (optional)" /><AlertDialogFooter><AlertDialogCancel>Cancel</AlertDialogCancel><AlertDialogAction @click="handleKickPlayer(player)">Confirm Kick</AlertDialogAction></AlertDialogFooter></AlertDialogContent></AlertDialog></TableCell></TableRow><TableEmpty v-if="onlinePlayers.length === 0" :colspan="3"><p>No players online</p></TableEmpty></TableBody></Table></CardContent></Card></TabsContent>
             <TabsContent value="files" class="mt-4"><Card><CardHeader><div class="flex items-center justify-between"><div><CardTitle>File Manager</CardTitle><CardDescription class="font-mono text-xs mt-1">{{ currentPath }}</CardDescription></div><div class="flex gap-2"><Button variant="outline" size="sm" @click="navigateUp" :disabled="currentPath === '/'"><Icon name="lucide:arrow-up" class="mr-2 h-4 w-4" />Go Up</Button></div></div></CardHeader><CardContent><Table><TableHeader><TableRow><TableHead>Name</TableHead><TableHead>Size</TableHead><TableHead>Modified</TableHead><TableHead class="text-right">Actions</TableHead></TableRow></TableHeader><TableBody><TableRow v-if="isFilesLoading"><TableCell colspan="4" class="text-center p-8"><Icon name="lucide:loader-circle" class="h-6 w-6 animate-spin" /></TableCell></TableRow><TableRow v-else v-for="file in files" :key="file.name" @click="handleFileClick(file)" class="cursor-pointer"><TableCell class="font-medium flex items-center gap-2"><Icon :name="getFileIcon(file.isDir)" class="text-muted-foreground" />{{ file.name }}</TableCell><TableCell>{{ file.isDir ? '-' : formatBytes(file.size) }}</TableCell><TableCell>{{ new Date(file.modified).toLocaleString() }}</TableCell><TableCell class="text-right"><Button variant="ghost" size="icon" class="h-8 w-8"><Icon name="lucide:more-horizontal" /></Button></TableCell></TableRow><TableEmpty v-if="!isFilesLoading && files.length === 0" :colspan="4"><p>This directory is empty.</p></TableEmpty></TableBody></Table></CardContent></Card></TabsContent>
             <TabsContent value="backups" class="mt-4"><BackupsTab :server-id="serverId" /></TabsContent>
